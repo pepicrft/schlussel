@@ -2,4 +2,4 @@
 #MISE description="Build for development"
 set -euo pipefail
 
-zig build
+cargo build

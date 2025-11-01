@@ -1,15 +1,15 @@
 # Schlussel
 
-A cross-platform OAuth 2.0 library with PKCE support for command-line applications, written in Zig.
+A cross-platform OAuth 2.0 library with PKCE support for command-line applications, written in Rust.
 
 ## Features
 
 - **OAuth 2.0 Authorization Code Flow** with PKCE (RFC 7636)
 - **Cross-platform**: Builds for Linux, macOS, and Windows (x86_64 and ARM64)
-- **Pluggable Storage**: Implement your own session and token storage backend
-- **Concurrency Control**: Thread-safe token refresh with automatic locking
-- **C API**: Compatible with any language that supports C FFI (Node.js, Python, Ruby, etc.)
-- **Zero Dependencies**: Pure Zig implementation
+- **Pluggable Storage**: Trait-based storage backend (implement `SessionStorage`)
+- **Concurrency Control**: Thread-safe token refresh with automatic locking using `parking_lot`
+- **C API**: Compatible with any language that supports C FFI
+- **Pure Rust**: Safe, fast, and reliable with Rust's memory safety guarantees
 
 ## What is PKCE?
 
@@ -17,28 +17,13 @@ PKCE (Proof Key for Code Exchange) is an extension to OAuth 2.0 that makes the a
 
 ## Installation
 
-### Node.js
+### Rust
 
-```bash
-npm install @tuist/schlussel
-```
+Add to your `Cargo.toml`:
 
-See [bindings/node/README.md](bindings/node/README.md) for Node.js usage.
-
-### Swift (iOS/macOS)
-
-Add to your `Package.swift`:
-
-```swift
-dependencies: [
-    .package(url: "https://github.com/tuist/schlussel.git", from: "0.1.0")
-]
-```
-
-Or build the XCFramework:
-
-```bash
-mise run build-xcframework
+```toml
+[dependencies]
+schlussel = "0.1.0"
 ```
 
 ### Building from Source
@@ -46,26 +31,57 @@ mise run build-xcframework
 The project uses [Mise](https://mise.jdx.dev/) for tool management:
 
 ```bash
-# Install tools
+# Install Rust via mise
 mise install
 
 # Development build
 mise run dev
+# or: cargo build
 
 # Run tests
 mise run test
-
-# Run example
-zig build example
+# or: cargo test
 
 # Cross-platform build for all targets
 mise run build
-
-# Build XCFramework for Apple platforms
-mise run build-xcframework
 ```
 
 ## Usage
+
+### Rust API
+
+```rust
+use schlussel::prelude::*;
+use std::sync::Arc;
+
+// Create storage
+let storage = Arc::new(MemoryStorage::new());
+
+// Configure OAuth
+let config = OAuthConfig {
+    client_id: "your-client-id".to_string(),
+    authorization_endpoint: "https://accounts.example.com/oauth/authorize".to_string(),
+    token_endpoint: "https://accounts.example.com/token".to_string(),
+    redirect_uri: "http://localhost:8080/callback".to_string(),
+    scope: Some("read write".to_string()),
+};
+
+// Create OAuth client
+let client = Arc::new(OAuthClient::new(config, storage.clone()));
+
+// Start OAuth flow
+let result = client.start_auth_flow().unwrap();
+println!("Authorization URL: {}", result.url);
+
+// Create token refresher
+let refresher = TokenRefresher::new(client.clone());
+
+// Refresh token with concurrency control
+let token = refresher.refresh_token("token-key", "refresh-token").unwrap();
+
+// Before exit, wait for refresh
+refresher.wait_for_refresh("token-key");
+```
 
 ### C API
 

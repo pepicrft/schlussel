@@ -31,3 +31,8 @@ Thumbs.db
 
 # Mise
 .mise.lock
+
+
+# Added by cargo
+
+/target

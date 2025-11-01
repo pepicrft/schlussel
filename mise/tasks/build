@@ -3,7 +3,7 @@
 set -euo pipefail
 
 # Cross-platform build script for Schlussel
-# Builds static and shared libraries for common platforms
+# Builds static and shared libraries for common platforms using Rust
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -18,14 +18,14 @@ rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
 
 # Define target platforms
-# Format: "zig-target:output-dir"
+# Format: "rust-target:output-dir"
 TARGETS=(
-    "x86_64-linux-gnu:linux-x86_64"
-    "aarch64-linux-gnu:linux-aarch64"
-    "x86_64-macos:macos-x86_64"
-    "aarch64-macos:macos-aarch64"
-    "x86_64-windows-gnu:windows-x86_64"
-    "aarch64-windows-gnu:windows-aarch64"
+    "x86_64-unknown-linux-gnu:linux-x86_64"
+    "aarch64-unknown-linux-gnu:linux-aarch64"
+    "x86_64-apple-darwin:macos-x86_64"
+    "aarch64-apple-darwin:macos-aarch64"
+    "x86_64-pc-windows-gnu:windows-x86_64"
+    "aarch64-pc-windows-gnu:windows-aarch64"
 )
 
 build_for_target() {
@@ -37,11 +37,18 @@ build_for_target() {
     local target_dir="$BUILD_DIR/$output_dir"
     mkdir -p "$target_dir"
 
-    # Build static library
-    zig build -Dtarget="$target" -Doptimize=ReleaseSafe --prefix "$target_dir"
+    # Add target if not installed
+    rustup target add "$target" 2>/dev/null || true
+
+    # Build static and shared libraries
+    cargo build --release --target "$target"
 
     if [ $? -eq 0 ]; then
         echo "  ✓ Build successful for $output_dir"
+
+        # Copy libraries to dist
+        mkdir -p "$target_dir/lib"
+        cp target/"$target"/release/libschlussel.* "$target_dir/lib/" 2>/dev/null || true
 
         # List generated files
         echo "  Generated files:"
@@ -60,16 +67,16 @@ for target_spec in "${TARGETS[@]}"; do
     build_for_target "$target" "$output_dir" || echo "Warning: Build failed for $output_dir"
 done
 
+# Copy include files
+mkdir -p "$BUILD_DIR/include"
+cp include/schlussel.h "$BUILD_DIR/include/" 2>/dev/null || true
+
 echo "============================================"
 echo "Cross-platform build complete!"
 echo ""
 echo "Build artifacts are in: $BUILD_DIR"
 echo ""
-echo "Directory structure:"
-tree -L 2 "$BUILD_DIR" 2>/dev/null || find "$BUILD_DIR" -type f | head -20
-
-echo ""
 echo "To use the library:"
-echo "  - Include: include/schlussel.h"
+echo "  - Include: $BUILD_DIR/include/schlussel.h"
 echo "  - Link against the appropriate library for your platform"
 echo ""

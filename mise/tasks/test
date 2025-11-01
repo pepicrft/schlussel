@@ -2,4 +2,4 @@
 #MISE description="Run tests"
 set -euo pipefail
 
-zig build test
+cargo test
