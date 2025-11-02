@@ -23,6 +23,165 @@ pub struct OAuthConfig {
     pub device_authorization_endpoint: Option<String>,
 }
 
+impl OAuthConfig {
+    /// Create a GitHub OAuth configuration
+    ///
+    /// # Arguments
+    ///
+    /// * `client_id` - Your GitHub OAuth App client ID
+    /// * `scopes` - Optional scopes (e.g., "repo user")
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use schlussel::oauth::OAuthConfig;
+    ///
+    /// let config = OAuthConfig::github("my-client-id", Some("repo user"));
+    /// ```
+    pub fn github(client_id: impl Into<String>, scopes: Option<&str>) -> Self {
+        Self {
+            client_id: client_id.into(),
+            authorization_endpoint: "https://github.com/login/oauth/authorize".to_string(),
+            token_endpoint: "https://github.com/login/oauth/access_token".to_string(),
+            redirect_uri: "http://127.0.0.1:8080/callback".to_string(),
+            scope: scopes.map(|s| s.to_string()),
+            device_authorization_endpoint: Some("https://github.com/login/device/code".to_string()),
+        }
+    }
+
+    /// Create a Google OAuth configuration
+    ///
+    /// # Arguments
+    ///
+    /// * `client_id` - Your Google OAuth client ID
+    /// * `scopes` - Optional scopes (e.g., "openid email profile")
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use schlussel::oauth::OAuthConfig;
+    ///
+    /// let config = OAuthConfig::google("my-client-id.apps.googleusercontent.com", Some("openid email"));
+    /// ```
+    pub fn google(client_id: impl Into<String>, scopes: Option<&str>) -> Self {
+        Self {
+            client_id: client_id.into(),
+            authorization_endpoint: "https://accounts.google.com/o/oauth2/v2/auth".to_string(),
+            token_endpoint: "https://oauth2.googleapis.com/token".to_string(),
+            redirect_uri: "http://127.0.0.1:8080/callback".to_string(),
+            scope: scopes.map(|s| s.to_string()),
+            device_authorization_endpoint: Some(
+                "https://oauth2.googleapis.com/device/code".to_string(),
+            ),
+        }
+    }
+
+    /// Create a Microsoft OAuth configuration
+    ///
+    /// # Arguments
+    ///
+    /// * `client_id` - Your Microsoft Application (client) ID
+    /// * `tenant` - Tenant ID or "common" for multi-tenant
+    /// * `scopes` - Optional scopes (e.g., "User.Read Mail.Read")
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use schlussel::oauth::OAuthConfig;
+    ///
+    /// let config = OAuthConfig::microsoft("my-client-id", "common", Some("User.Read"));
+    /// ```
+    pub fn microsoft(client_id: impl Into<String>, tenant: &str, scopes: Option<&str>) -> Self {
+        Self {
+            client_id: client_id.into(),
+            authorization_endpoint: format!(
+                "https://login.microsoftonline.com/{}/oauth2/v2.0/authorize",
+                tenant
+            ),
+            token_endpoint: format!(
+                "https://login.microsoftonline.com/{}/oauth2/v2.0/token",
+                tenant
+            ),
+            redirect_uri: "http://127.0.0.1:8080/callback".to_string(),
+            scope: scopes.map(|s| s.to_string()),
+            device_authorization_endpoint: Some(format!(
+                "https://login.microsoftonline.com/{}/oauth2/v2.0/devicecode",
+                tenant
+            )),
+        }
+    }
+
+    /// Create a GitLab OAuth configuration
+    ///
+    /// # Arguments
+    ///
+    /// * `client_id` - Your GitLab application ID
+    /// * `scopes` - Optional scopes (e.g., "read_user read_api")
+    /// * `gitlab_url` - Optional GitLab instance URL (defaults to gitlab.com)
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use schlussel::oauth::OAuthConfig;
+    ///
+    /// // GitLab.com
+    /// let config = OAuthConfig::gitlab("my-client-id", Some("read_user"), None);
+    ///
+    /// // Self-hosted GitLab
+    /// let config = OAuthConfig::gitlab("my-client-id", Some("read_user"), Some("https://gitlab.example.com"));
+    /// ```
+    pub fn gitlab(
+        client_id: impl Into<String>,
+        scopes: Option<&str>,
+        gitlab_url: Option<&str>,
+    ) -> Self {
+        let base_url = gitlab_url.unwrap_or("https://gitlab.com");
+        Self {
+            client_id: client_id.into(),
+            authorization_endpoint: format!("{}/oauth/authorize", base_url),
+            token_endpoint: format!("{}/oauth/token", base_url),
+            redirect_uri: "http://127.0.0.1:8080/callback".to_string(),
+            scope: scopes.map(|s| s.to_string()),
+            device_authorization_endpoint: None, // GitLab doesn't support Device Code Flow yet
+        }
+    }
+
+    /// Create a Tuist OAuth configuration
+    ///
+    /// # Arguments
+    ///
+    /// * `client_id` - Your Tuist application client ID
+    /// * `scopes` - Optional scopes
+    /// * `tuist_url` - Optional Tuist instance URL (defaults to cloud.tuist.io)
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use schlussel::oauth::OAuthConfig;
+    ///
+    /// // Tuist Cloud
+    /// let config = OAuthConfig::tuist("my-client-id", None, None);
+    ///
+    /// // Self-hosted Tuist
+    /// let config = OAuthConfig::tuist("my-client-id", None, Some("https://tuist.example.com"));
+    /// ```
+    pub fn tuist(
+        client_id: impl Into<String>,
+        scopes: Option<&str>,
+        tuist_url: Option<&str>,
+    ) -> Self {
+        let base_url = tuist_url.unwrap_or("https://cloud.tuist.io");
+        Self {
+            client_id: client_id.into(),
+            authorization_endpoint: format!("{}/oauth/authorize", base_url),
+            token_endpoint: format!("{}/oauth/token", base_url),
+            redirect_uri: "http://127.0.0.1:8080/callback".to_string(),
+            scope: scopes.map(|s| s.to_string()),
+            device_authorization_endpoint: Some(format!("{}/oauth/device/code", base_url)),
+        }
+    }
+}
+
 /// Authorization flow result
 #[derive(Debug, Clone)]
 pub struct AuthFlowResult {
@@ -963,5 +1122,127 @@ mod tests {
             scope: None,
         };
         assert!(!refresher.should_refresh(&no_expiry_token, 0.8));
+    }
+
+    #[test]
+    fn test_github_preset() {
+        let config = OAuthConfig::github("test-client-id", Some("repo user"));
+
+        assert_eq!(config.client_id, "test-client-id");
+        assert_eq!(
+            config.authorization_endpoint,
+            "https://github.com/login/oauth/authorize"
+        );
+        assert_eq!(
+            config.token_endpoint,
+            "https://github.com/login/oauth/access_token"
+        );
+        assert_eq!(config.scope, Some("repo user".to_string()));
+        assert_eq!(
+            config.device_authorization_endpoint,
+            Some("https://github.com/login/device/code".to_string())
+        );
+    }
+
+    #[test]
+    fn test_google_preset() {
+        let config =
+            OAuthConfig::google("client-id.apps.googleusercontent.com", Some("openid email"));
+
+        assert_eq!(config.client_id, "client-id.apps.googleusercontent.com");
+        assert_eq!(
+            config.authorization_endpoint,
+            "https://accounts.google.com/o/oauth2/v2/auth"
+        );
+        assert_eq!(config.token_endpoint, "https://oauth2.googleapis.com/token");
+        assert_eq!(config.scope, Some("openid email".to_string()));
+        assert_eq!(
+            config.device_authorization_endpoint,
+            Some("https://oauth2.googleapis.com/device/code".to_string())
+        );
+    }
+
+    #[test]
+    fn test_microsoft_preset() {
+        let config = OAuthConfig::microsoft("test-client-id", "common", Some("User.Read"));
+
+        assert_eq!(config.client_id, "test-client-id");
+        assert_eq!(
+            config.authorization_endpoint,
+            "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
+        );
+        assert_eq!(
+            config.token_endpoint,
+            "https://login.microsoftonline.com/common/oauth2/v2.0/token"
+        );
+        assert_eq!(config.scope, Some("User.Read".to_string()));
+        assert_eq!(
+            config.device_authorization_endpoint,
+            Some("https://login.microsoftonline.com/common/oauth2/v2.0/devicecode".to_string())
+        );
+    }
+
+    #[test]
+    fn test_gitlab_preset() {
+        // GitLab.com
+        let config = OAuthConfig::gitlab("test-client-id", Some("read_user"), None);
+
+        assert_eq!(config.client_id, "test-client-id");
+        assert_eq!(
+            config.authorization_endpoint,
+            "https://gitlab.com/oauth/authorize"
+        );
+        assert_eq!(config.token_endpoint, "https://gitlab.com/oauth/token");
+        assert_eq!(config.scope, Some("read_user".to_string()));
+        assert_eq!(config.device_authorization_endpoint, None);
+
+        // Self-hosted GitLab
+        let config = OAuthConfig::gitlab(
+            "test-client-id",
+            Some("read_user"),
+            Some("https://gitlab.example.com"),
+        );
+
+        assert_eq!(
+            config.authorization_endpoint,
+            "https://gitlab.example.com/oauth/authorize"
+        );
+        assert_eq!(
+            config.token_endpoint,
+            "https://gitlab.example.com/oauth/token"
+        );
+    }
+
+    #[test]
+    fn test_tuist_preset() {
+        // Tuist Cloud
+        let config = OAuthConfig::tuist("test-client-id", None, None);
+
+        assert_eq!(config.client_id, "test-client-id");
+        assert_eq!(
+            config.authorization_endpoint,
+            "https://cloud.tuist.io/oauth/authorize"
+        );
+        assert_eq!(config.token_endpoint, "https://cloud.tuist.io/oauth/token");
+        assert_eq!(
+            config.device_authorization_endpoint,
+            Some("https://cloud.tuist.io/oauth/device/code".to_string())
+        );
+
+        // Self-hosted Tuist
+        let config = OAuthConfig::tuist("test-client-id", None, Some("https://tuist.example.com"));
+
+        assert_eq!(
+            config.authorization_endpoint,
+            "https://tuist.example.com/oauth/authorize"
+        );
+        assert_eq!(
+            config.token_endpoint,
+            "https://tuist.example.com/oauth/token"
+        );
+        assert_eq!(
+            config.device_authorization_endpoint,
+            Some("https://tuist.example.com/oauth/device/code".to_string())
+        );
     }
 }
