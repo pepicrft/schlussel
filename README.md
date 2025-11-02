@@ -62,8 +62,8 @@ mise run build
 use schlussel::prelude::*;
 use std::sync::Arc;
 
-// Create file storage (uses XDG_DATA_HOME or platform equivalent)
-let storage = Arc::new(FileStorage::new().unwrap());
+// Create file storage with your app name (uses XDG_DATA_HOME or platform equivalent)
+let storage = Arc::new(FileStorage::new("my-app").unwrap());
 
 // Configure OAuth
 let config = OAuthConfig {
@@ -159,14 +159,16 @@ refresher.wait_for_refresh("token-key");
 1. **FileStorage** (Recommended for production CLI apps)
    - Stores sessions and tokens in JSON files
    - Follows XDG Base Directory specification
-   - Location:
-     - Linux/macOS: `~/.local/share/schlussel/`
-     - Windows: `%APPDATA%\schlussel\`
+   - Configurable application name for storage path
+   - Location (when using `FileStorage::new("my-app")`):
+     - Linux/macOS: `~/.local/share/my-app/`
+     - Windows: `%APPDATA%\my-app\`
    - **Domain-based organization**: Tokens are stored in separate files per domain
      - Format: `tokens_<domain>.json`
      - Example: `tokens_github.com.json`, `tokens_api.tuist.io.json`
    - Token keys use format: `domain:identifier`
      - Example: `github.com:user@example.com`
+   - Alternative: Use `FileStorage::with_path(path)` for custom directory
 
 2. **MemoryStorage**
    - In-memory storage using `HashMap`

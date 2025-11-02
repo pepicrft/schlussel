@@ -144,14 +144,27 @@ pub struct FileStorage {
 }
 
 impl FileStorage {
-    /// Create a new file storage instance
+    /// Create a new file storage instance with a custom application name
     ///
     /// Uses XDG_DATA_HOME (or ~/.local/share on Linux/macOS, AppData on Windows)
-    /// to store credentials in schlussel/
-    pub fn new() -> Result<Self, String> {
+    /// to store credentials in <app_name>/
+    ///
+    /// # Arguments
+    ///
+    /// * `app_name` - The application name to use for the storage directory
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use schlussel::session::FileStorage;
+    ///
+    /// let storage = FileStorage::new("my-app").unwrap();
+    /// // Stores data in ~/.local/share/my-app/ (on Linux/macOS)
+    /// ```
+    pub fn new(app_name: &str) -> Result<Self, String> {
         let base_path = dirs::data_dir()
             .ok_or_else(|| "Could not determine data directory".to_string())?
-            .join("schlussel");
+            .join(app_name);
 
         fs::create_dir_all(&base_path)
             .map_err(|e| format!("Failed to create storage directory: {}", e))?;
@@ -160,6 +173,21 @@ impl FileStorage {
     }
 
     /// Create a file storage instance with a custom path
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The full path to use for storage
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use schlussel::session::FileStorage;
+    /// use std::path::PathBuf;
+    /// use std::env;
+    ///
+    /// let custom_path = env::temp_dir().join("my-app-storage");
+    /// let storage = FileStorage::with_path(custom_path).unwrap();
+    /// ```
     pub fn with_path(path: PathBuf) -> Result<Self, String> {
         fs::create_dir_all(&path)
             .map_err(|e| format!("Failed to create storage directory: {}", e))?;
