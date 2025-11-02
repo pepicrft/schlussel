@@ -10,7 +10,7 @@ keywords = ["oauth", "oauth2", "pkce", "cli", "authentication"]
 categories = ["authentication", "api-bindings"]
 
 [lib]
-crate-type = ["lib"]
+crate-type = ["lib", "staticlib", "cdylib"]
 
 [dependencies]
 base64 = "0.22"

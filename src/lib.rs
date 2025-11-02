@@ -33,6 +33,7 @@
 
 pub mod callback;
 pub mod error;
+pub mod ffi;
 pub mod lock;
 pub mod oauth;
 pub mod pkce;

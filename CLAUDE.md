@@ -2,253 +2,247 @@
 
 ## Project Overview
 
-Schlussel is a cross-platform OAuth 2.0 library with PKCE (Proof Key for Code Exchange) support, specifically designed for command-line applications. It is written in Zig and provides both a native Zig API and a C-compatible API for use with other programming languages.
+Schlussel is a cross-platform OAuth 2.0 library with PKCE and Device Code Flow support, written in Rust. It's specifically designed for command-line applications and provides secure token storage using OS credential managers.
 
 ## Core Architecture
 
-### Key Components
+### Key Modules
 
-1. **PKCE Module** (`src/pkce.zig`)
+1. **PKCE Module** (`src/pkce.rs`)
    - Generates cryptographically secure code verifiers and challenges
    - Uses SHA256 for challenge generation
-   - Always use base64 URL-safe encoding without padding
+   - Base64 URL-safe encoding without padding
 
-2. **Session Management** (`src/session.zig`)
-   - Provides pluggable storage via vtable pattern
-   - Thread-safe with mutex locks
-   - Supports both session state and token persistence
+2. **Session Management** (`src/session.rs`)
+   - Trait-based storage interface (`SessionStorage`)
+   - Three built-in backends: `SecureStorage`, `FileStorage`, `MemoryStorage`
+   - Thread-safe with `parking_lot::RwLock`
+   - Domain-based file organization
 
-3. **OAuth Flow** (`src/oauth.zig`)
-   - Orchestrates the complete OAuth 2.0 authorization code flow
-   - Manages session lifecycle
-   - Handles token storage and retrieval
+3. **OAuth Flow** (`src/oauth.rs`)
+   - Device Code Flow (RFC 8628) - primary for CLI apps
+   - Authorization Code Flow with PKCE
+   - Automatic browser opening and callback handling
+   - Token refresh with HTTP client (`reqwest`)
+   - Provider presets (GitHub, Google, Microsoft, GitLab, Tuist)
 
-4. **Token Refresher** (`src/oauth.zig`)
-   - Prevents concurrent token refreshes for the same key
-   - Provides waiting mechanism for in-progress refreshes
-   - Critical for ensuring token validity across process boundaries
+4. **Token Refresher** (`src/oauth.rs`)
+   - In-process locking (threads)
+   - Cross-process locking (file-based with `fs2`)
+   - Automatic token refresh (`get_valid_token`)
+   - Proactive refresh with thresholds
 
-5. **C API** (`src/c_api.zig`)
-   - FFI layer for C compatibility
-   - Uses opaque pointers for type safety
-   - Provides error codes instead of exceptions
+5. **Callback Server** (`src/callback.rs`)
+   - Local HTTP server for OAuth redirects
+   - Random port assignment
+   - HTML success/error pages
+
+6. **Cross-Process Locking** (`src/lock.rs`)
+   - File-based locks using `fs2`
+   - RAII lock guards
+   - Check-then-refresh pattern
+
+7. **FFI Layer** (`src/ffi.rs`)
+   - C-compatible API for Swift/Objective-C
+   - Opaque pointers for type safety
+   - Error codes instead of Result types
+
+## Documentation Maintenance 📚
+
+**CRITICAL**: Documentation must ALWAYS be kept in sync with code changes!
+
+### Documentation Structure
+
+- **`README.md`** - Simple, emoji-rich overview with links to docs/
+- **`docs/README.md`** - Documentation index
+- **`docs/*.md`** - Individual topic documentation
+
+### Rules for Code Changes
+
+When you modify code, you MUST update documentation:
+
+1. **Adding a new feature:**
+   - Update relevant `docs/*.md` file
+   - Add to `docs/README.md` index if it's a major feature
+   - Update main `README.md` if it's a key feature
+   - Add example to `examples/` directory
+
+2. **Changing an API:**
+   - Update all code examples in `docs/`
+   - Update `README.md` if the API is shown there
+   - Update inline doc comments (`///`)
+   - Update examples in `examples/`
+
+3. **Adding dependencies:**
+   - Document why in relevant `docs/*.md`
+   - Update platform requirements if needed
+
+4. **Deprecating features:**
+   - Add deprecation notices to docs
+   - Provide migration guides
+
+### Documentation Checklist
+
+Before completing any task, verify:
+- ✅ All code examples in docs still compile
+- ✅ API signatures in docs match actual code
+- ✅ New features are documented
+- ✅ README.md links to relevant docs
+- ✅ Examples are up to date
+
+### Keep It Simple
+
+- **README.md**: Short, visual, emoji-rich, links to docs/
+- **docs/**: Detailed guides, keep each file focused on one topic
+- **Inline docs**: Comprehensive, with examples
+- **Examples**: Working code that demonstrates features
 
 ## Development Guidelines
 
 ### Code Style
 
-- Follow Zig standard library conventions
-- Use `const` by default, `var` only when mutation is needed
-- Prefer explicit over implicit
-- Always use `errdefer` for cleanup in error paths
+- Follow Rust standard conventions (`cargo fmt`)
+- Use `const` by default
+- Prefer `?` for error propagation
 - Document public APIs with doc comments (`///`)
+- Add examples to doc comments
 
 ### Testing
 
-- Write tests inline using `test` blocks
-- Integration tests go in `test/integration_test.zig`
-- Run tests with: `zig build test`
-- Ensure all tests pass before committing
+- Unit tests inline in modules
+- Integration tests in `tests/`
+- Run: `cargo test`
+- All tests must pass before committing
+- Add tests for new features
 
 ### Building
 
-- Development: `zig build`
-- Cross-platform: `mise run build`
-- Example: `zig build example`
-- Clean build: `rm -rf zig-cache zig-out dist`
+- Development: `cargo build`
+- Release: `cargo build --release`
+- Examples: `cargo run --example <name>`
+- All targets: `mise run build`
+
+### CI Requirements
+
+All PRs must pass:
+- ✅ Tests on Ubuntu, macOS, Windows
+- ✅ `cargo fmt --check`
+- ✅ `cargo clippy -- -D warnings`
 
 ## Important Design Decisions
 
-### 1. Thread Safety
+### 1. Security First
 
-All storage operations must be thread-safe. The `MemoryStorage` implementation uses a mutex to protect concurrent access. Custom storage implementations should follow the same pattern.
+- **SecureStorage is default recommendation** - uses OS credential managers
+- FileStorage has warnings about plaintext storage
+- Always use PKCE for OAuth flows
+- Cross-process locking prevents race conditions
 
-### 2. Token Refresh Concurrency
+### 2. Device Code Flow Priority
 
-The `TokenRefresher` uses a hash map to track in-progress refreshes. When multiple callers request a refresh for the same token:
-- The first caller performs the refresh
-- Subsequent callers wait for the refresh to complete
-- All callers receive the refreshed token
+- Primary flow for CLI applications
+- Simpler UX than callback server
+- Works in headless/remote environments
+- Falls back to callback flow when Device Code not supported
 
-This prevents redundant refresh requests and potential race conditions.
+### 3. Automatic Token Refresh
 
-### 3. Process Exit Handling
+- `get_valid_token()` eliminates manual expiration checking
+- Proactive refresh with configurable thresholds
+- Cross-process safe when using `with_file_locking()`
 
-Token refreshes may be in-progress when a process exits. The `waitForRefresh` method allows callers to block until any in-progress refresh completes, ensuring:
-- The refreshed token is persisted to storage
-- No partial/invalid tokens are left in storage
+### 4. Provider Presets
 
-### 4. Storage Abstraction
+- One-line configuration for popular providers
+- Reduces errors from manual endpoint configuration
+- Self-hosted instance support where applicable
 
-The storage interface is designed to support multiple backends:
-- Memory (for testing/simple use cases)
-- File-based (JSON, SQLite, etc.)
-- OS keychains/credential managers
-- Remote storage
+### 5. Storage Abstraction
 
-When implementing a custom storage backend:
-- Implement all vtable methods
-- Ensure thread safety
-- Handle allocation/deallocation correctly
-- Use the allocator passed to `Session.init` and `Token` constructors
+Three built-in backends:
+- **SecureStorage**: Production (OS keychain/credential manager)
+- **FileStorage**: Development (JSON files)
+- **MemoryStorage**: Testing (in-memory)
+
+### 6. Cross-Process Coordination
+
+- File-based locks at refresh level (not storage level)
+- Check-then-refresh pattern to avoid redundant HTTP requests
+- RAII lock guards with automatic cleanup
 
 ## Common Tasks
 
-### Adding New OAuth Endpoints
+### Adding a New Provider Preset
 
-1. Add configuration fields to `OAuthConfig`
-2. Update URL building logic in `oauth.zig`
-3. Add corresponding C API fields in `c_api.zig`
-4. Update the C header in `include/schlussel.h`
-5. Add tests for the new functionality
+1. Add method to `OAuthConfig` impl in `src/oauth.rs`
+2. Add test to verify endpoints
+3. Add doctest example
+4. Update `docs/provider-presets.md`
+5. Update `README.md` if it's a major provider
 
-### Implementing a New Storage Backend
+### Adding a New Storage Backend
 
-```zig
-pub const MyStorage = struct {
-    // Your storage state
-    mutex: std.Thread.Mutex,
-    allocator: std.mem.Allocator,
+1. Implement `SessionStorage` trait in `src/session.rs`
+2. Add to prelude exports in `src/lib.rs`
+3. Add tests
+4. Add example to `examples/`
+5. Document in `docs/storage-backends.md`
 
-    pub fn init(allocator: std.mem.Allocator) MyStorage {
-        return .{
-            .mutex = .{},
-            .allocator = allocator,
-        };
-    }
+### Adding FFI Functions
 
-    pub fn storage(self: *MyStorage) session.SessionStorage {
-        return .{
-            .ptr = self,
-            .vtable = &.{
-                .saveSession = saveSession,
-                .getSession = getSession,
-                .deleteSession = deleteSession,
-                .saveToken = saveToken,
-                .getToken = getToken,
-                .deleteToken = deleteToken,
-            },
-        };
-    }
-
-    // Implement all vtable methods...
-    fn saveSession(ptr: *anyopaque, state: []const u8, sess: session.Session) !void {
-        const self: *MyStorage = @ptrCast(@alignCast(ptr));
-        self.mutex.lock();
-        defer self.mutex.unlock();
-        // Implementation
-    }
-};
-```
-
-### Adding HTTP Client for Token Exchange
-
-The current implementation does not include HTTP client code for the actual token exchange. To add this:
-
-1. Add an HTTP client dependency (e.g., `std.http` or a third-party library)
-2. Implement `exchangeCodeForToken` in `oauth.zig`
-3. Implement `refreshTokenWithEndpoint` in `TokenRefresher`
-4. Add TLS certificate validation
-5. Add timeout and retry logic
-
-Example structure:
-
-```zig
-pub fn exchangeCodeForToken(
-    self: *OAuth,
-    code: []const u8,
-    state: []const u8,
-) !TokenResponse {
-    // 1. Retrieve session by state
-    // 2. Build token request with code and code_verifier
-    // 3. Make HTTP POST to token_endpoint
-    // 4. Parse response JSON
-    // 5. Return TokenResponse
-    // 6. Delete session
-}
-```
+1. Add to `src/ffi.rs` with `#[no_mangle]` and `extern "C"`
+2. Update `include/schlussel.h`
+3. Update Swift wrapper if applicable
+4. Test on all platforms
 
 ## Security Considerations
 
-1. **Always use PKCE**: Never allow fallback to non-PKCE flows
-2. **Validate state parameter**: Always verify state matches to prevent CSRF
-3. **Secure token storage**: Recommend encrypted storage in documentation
-4. **HTTPS enforcement**: Validate that endpoints use HTTPS in production
-5. **Token expiration**: Always check `token.isExpired()` before use
-6. **Code verifier entropy**: Use cryptographically secure random number generator
+1. **Secure Storage**: Always recommend `SecureStorage` for production
+2. **PKCE Required**: Never allow non-PKCE flows
+3. **State Validation**: Always verify state parameter
+4. **HTTPS Only**: Validate endpoints use HTTPS (except localhost)
+5. **Token Expiration**: Use `get_valid_token()` for automatic checking
+6. **Cross-Process Safety**: Use `with_file_locking()` when multiple processes might run
 
-## Cross-Platform Considerations
+## Platform-Specific Notes
 
-### Platform-Specific Behavior
+### macOS
+- SecureStorage uses Keychain
+- XCFramework support for Swift/iOS
+- Keyring tests may skip in some environments
 
-- File paths: Use Zig's `std.fs.path` for cross-platform path handling
-- Line endings: Be consistent with `\n` in code
-- Shared library naming: Handled automatically by Zig build system
+### Windows
+- SecureStorage uses Credential Manager
+- File locking uses different error codes (handle error 33)
 
-### Build Targets
-
-The project builds for:
-- Linux: x86_64, aarch64
-- macOS: x86_64 (Intel), aarch64 (Apple Silicon)
-- Windows: x86_64, aarch64
-
-Test on multiple platforms when making changes to:
-- File I/O
-- Network code (when added)
-- Thread synchronization
-- Time handling
-
-## Troubleshooting
-
-### Common Build Issues
-
-1. **Missing Zig**: Run `mise install` to install required tools
-2. **Build fails on specific target**: Check Zig version compatibility
-3. **Tests fail**: Ensure no environment-specific assumptions
-
-### Common Runtime Issues
-
-1. **Memory leaks**: Always pair init/deinit, use errdefer
-2. **Segfaults**: Check pointer alignment with @alignCast
-3. **Race conditions**: Verify all storage operations use locks
+### Linux
+- SecureStorage requires libsecret
+- XDG Base Directory specification for file paths
 
 ## API Stability
 
-### Stable APIs (do not break without major version bump)
+### Stable (don't break without major version)
+- Public structs and their fields
+- `SessionStorage` trait methods
+- FFI function signatures
+- Provider preset methods
 
-- C API function signatures
-- Public Zig struct fields
-- Storage vtable interface
-
-### Internal APIs (can change in minor versions)
-
+### Can Change (minor versions)
+- Internal implementation details
 - Private functions
-- Implementation details
-- Internal data structures
+- Error message formats
 
-## Performance Considerations
+## Testing Strategy
 
-1. **Allocations**: Minimize allocations in hot paths
-2. **Locking**: Keep critical sections as short as possible
-3. **Polling**: The refresh wait mechanism uses polling - consider condition variables for production
-4. **String operations**: Use `std.mem.eql` instead of loops
-
-## Future Enhancements
-
-Potential areas for improvement:
-
-1. HTTP client integration for complete OAuth flow
-2. Condition variables instead of polling in `TokenRefresher`
-3. More storage backends (SQLite, OS keychain, etc.)
-4. OAuth 2.1 compliance
-5. Device flow support (RFC 8628)
-6. Better error messages and error context
-7. Metrics and logging hooks
-8. Token rotation strategies
+1. **Unit tests**: Test individual components
+2. **Integration tests**: Test full OAuth flows (mock when needed)
+3. **Doctest examples**: Ensure documentation code compiles
+4. **Platform-specific**: Test file locking, keyring on each OS
+5. **Graceful skipping**: Tests skip if environment doesn't support (e.g., keyring in CI)
 
 ## References
 
-- [Zig Language Reference](https://ziglang.org/documentation/master/)
 - [RFC 7636: PKCE](https://tools.ietf.org/html/rfc7636)
 - [RFC 6749: OAuth 2.0](https://tools.ietf.org/html/rfc6749)
+- [RFC 8628: Device Code Flow](https://tools.ietf.org/html/rfc8628)
 - [RFC 8252: OAuth 2.0 for Native Apps](https://tools.ietf.org/html/rfc8252)
