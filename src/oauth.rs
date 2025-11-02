@@ -409,18 +409,67 @@ impl<S: SessionStorage> OAuthClient<S> {
 
 /// Token refresher with concurrency control
 ///
-/// Ensures only one refresh happens at a time for a given token key.
+/// Ensures only one refresh happens at a time for a given token key,
+/// both within the same process and across multiple processes.
 pub struct TokenRefresher<S: SessionStorage> {
     client: Arc<OAuthClient<S>>,
     refresh_in_progress: Arc<Mutex<HashMap<String, bool>>>,
+    lock_manager: Option<Arc<crate::lock::RefreshLockManager>>,
 }
 
 impl<S: SessionStorage> TokenRefresher<S> {
-    /// Create a new token refresher
+    /// Create a new token refresher without cross-process locking
     pub fn new(client: Arc<OAuthClient<S>>) -> Self {
         Self {
             client,
             refresh_in_progress: Arc::new(Mutex::new(HashMap::new())),
+            lock_manager: None,
+        }
+    }
+
+    /// Create a new token refresher with cross-process locking
+    ///
+    /// This uses file-based locks to coordinate refreshes across multiple processes.
+    /// Recommended for production use when multiple processes might refresh the same token.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use schlussel::prelude::*;
+    /// use std::sync::Arc;
+    ///
+    /// let storage = Arc::new(FileStorage::new("my-app").unwrap());
+    /// let config = OAuthConfig { /* ... */
+    /// # client_id: "test".to_string(),
+    /// # authorization_endpoint: "https://test.com/auth".to_string(),
+    /// # token_endpoint: "https://test.com/token".to_string(),
+    /// # redirect_uri: "http://localhost".to_string(),
+    /// # scope: None,
+    /// # device_authorization_endpoint: None,
+    /// };
+    /// let client = Arc::new(OAuthClient::new(config, storage));
+    ///
+    /// // With cross-process locking
+    /// let refresher = TokenRefresher::with_file_locking(client, "my-app").unwrap();
+    /// ```
+    pub fn with_file_locking(client: Arc<OAuthClient<S>>, app_name: &str) -> Result<Self> {
+        let lock_manager = crate::lock::RefreshLockManager::for_app(app_name)?;
+        Ok(Self {
+            client,
+            refresh_in_progress: Arc::new(Mutex::new(HashMap::new())),
+            lock_manager: Some(Arc::new(lock_manager)),
+        })
+    }
+
+    /// Create a new token refresher with a custom lock manager
+    pub fn with_lock_manager(
+        client: Arc<OAuthClient<S>>,
+        lock_manager: Arc<crate::lock::RefreshLockManager>,
+    ) -> Self {
+        Self {
+            client,
+            refresh_in_progress: Arc::new(Mutex::new(HashMap::new())),
+            lock_manager: Some(lock_manager),
         }
     }
 
@@ -428,7 +477,57 @@ impl<S: SessionStorage> TokenRefresher<S> {
     ///
     /// If a refresh is already in progress for the key, this will wait
     /// for it to complete and return the refreshed token.
+    ///
+    /// When configured with file locking, this method is safe to call from
+    /// multiple processes simultaneously. It uses a "check-then-refresh" pattern:
+    /// 1. Acquire cross-process lock
+    /// 2. Re-read the token (another process may have already refreshed it)
+    /// 3. Check if token is still expired
+    /// 4. Only refresh if still needed
+    /// 5. Release lock
     pub fn refresh_token_for_key(&self, key: &str) -> Result<Token> {
+        // If we have a lock manager, use cross-process locking
+        if let Some(lock_manager) = &self.lock_manager {
+            return self.refresh_with_file_lock(key, lock_manager);
+        }
+
+        // Otherwise, use in-process locking only
+        self.refresh_in_process(key)
+    }
+
+    /// Refresh with cross-process file locking (check-then-refresh pattern)
+    fn refresh_with_file_lock(
+        &self,
+        key: &str,
+        lock_manager: &crate::lock::RefreshLockManager,
+    ) -> Result<Token> {
+        // Acquire cross-process lock (blocks until available)
+        let _lock = lock_manager.acquire_lock(key)?;
+
+        // Re-read token after acquiring lock (another process may have refreshed it)
+        let token = self
+            .client
+            .get_token(key)?
+            .ok_or_else(|| OAuthError::InvalidResponse("Token not found".into()))?;
+
+        // Check if token is still expired
+        if !token.is_expired() {
+            // Token was already refreshed by another process
+            return Ok(token);
+        }
+
+        // Token still expired, we need to refresh
+        let refresh_token = token.refresh_token.ok_or(OAuthError::NoRefreshToken)?;
+
+        let new_token = self.client.refresh_token(&refresh_token)?;
+        self.client.save_token(key, new_token.clone())?;
+
+        Ok(new_token)
+        // Lock automatically released on drop
+    }
+
+    /// Refresh with in-process locking only
+    fn refresh_in_process(&self, key: &str) -> Result<Token> {
         // Get the current token to extract refresh_token
         let current_token = self
             .client

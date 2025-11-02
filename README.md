@@ -266,9 +266,9 @@ if token.is_expired() {
 println!("Access token: {}", token.access_token);
 ```
 
-#### Thread-Safe Token Refresh
+#### Thread-Safe Token Refresh (In-Process)
 
-For concurrent applications, use `TokenRefresher` to prevent multiple simultaneous refreshes:
+For concurrent applications within a single process:
 
 ```rust
 use schlussel::prelude::*;
@@ -277,13 +277,43 @@ use std::sync::Arc;
 let client = Arc::new(OAuthClient::new(config, storage));
 let refresher = TokenRefresher::new(client.clone());
 
-// Refresh token with concurrency control
+// Refresh token with in-process concurrency control
 // If another thread is already refreshing this token, this will wait
 let token = refresher.refresh_token_for_key("example.com:user").unwrap();
 
 // Before application exit, wait for any pending refreshes
 refresher.wait_for_refresh("example.com:user");
 ```
+
+#### Cross-Process Token Refresh (Recommended for Production)
+
+For applications where multiple processes might refresh the same token (e.g., cron jobs, parallel CI/CD pipelines, multiple CLI instances):
+
+```rust
+use schlussel::prelude::*;
+use std::sync::Arc;
+
+let client = Arc::new(OAuthClient::new(config, storage));
+
+// Create refresher with cross-process file locking
+let refresher = TokenRefresher::with_file_locking(client.clone(), "my-app").unwrap();
+
+// Safe to call from multiple processes simultaneously
+// Uses "check-then-refresh" pattern:
+// 1. Acquires cross-process lock
+// 2. Re-reads token (another process may have refreshed it)
+// 3. Checks if still expired
+// 4. Only refreshes if needed
+// 5. Releases lock
+let token = refresher.refresh_token_for_key("example.com:user").unwrap();
+```
+
+**Benefits of cross-process locking:**
+- ✅ Prevents duplicate refresh HTTP requests
+- ✅ Avoids race conditions across processes
+- ✅ Efficient: only one process actually refreshes
+- ✅ Safe for parallel execution (cron jobs, CI/CD, etc.)
+- ✅ Automatic with file-based locks (works on Unix, Linux, macOS, Windows)
 
 #### Using In-Memory Storage (For testing)
 

@@ -33,6 +33,7 @@
 
 pub mod callback;
 pub mod error;
+pub mod lock;
 pub mod oauth;
 pub mod pkce;
 pub mod session;
@@ -41,6 +42,7 @@ pub mod session;
 pub mod prelude {
     pub use crate::callback::{CallbackResult, CallbackServer};
     pub use crate::error::{OAuthError, Result};
+    pub use crate::lock::{RefreshLock, RefreshLockManager};
     pub use crate::oauth::{
         AuthFlowResult, DeviceAuthorizationResponse, OAuthClient, OAuthConfig, TokenRefresher,
     };
