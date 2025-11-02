@@ -76,11 +76,40 @@ PKCE (Proof Key for Code Exchange) is an extension to OAuth 2.0 that makes the a
 
 ## Quick Start
 
+### Provider Presets
+
+Schlussel includes presets for popular OAuth providers - just pass your client ID:
+
+```rust
+// GitHub
+let config = OAuthConfig::github("client-id", Some("repo user"));
+
+// Google  
+let config = OAuthConfig::google("client-id.apps.googleusercontent.com", Some("openid email"));
+
+// Microsoft/Azure AD
+let config = OAuthConfig::microsoft("client-id", "common", Some("User.Read"));
+
+// GitLab
+let config = OAuthConfig::gitlab("client-id", Some("read_user"), None);
+
+// Tuist
+let config = OAuthConfig::tuist("client-id", None, None);
+
+// Self-hosted instances supported:
+let config = OAuthConfig::gitlab("client-id", Some("read_user"), Some("https://gitlab.mycompany.com"));
+let config = OAuthConfig::tuist("client-id", None, Some("https://tuist.mycompany.com"));
+```
+
+### Examples
+
 Check out the [examples/](examples/) directory for working examples:
 
 - **[github_device_flow.rs](examples/github_device_flow.rs)** - Device Code Flow with GitHub
 - **[github_callback.rs](examples/github_callback.rs)** - Authorization Code Flow with callback server
 - **[token_refresh.rs](examples/token_refresh.rs)** - Token expiration and refresh patterns
+- **[automatic_refresh.rs](examples/automatic_refresh.rs)** - Automatic token refresh
+- **[cross_process_refresh.rs](examples/cross_process_refresh.rs)** - Multi-process token coordination
 
 Run an example:
 ```bash
@@ -141,15 +170,8 @@ use std::sync::Arc;
 // Create file storage
 let storage = Arc::new(FileStorage::new("my-app").unwrap());
 
-// Configure OAuth with Device Code Flow
-let config = OAuthConfig {
-    client_id: "your-client-id".to_string(),
-    authorization_endpoint: "https://github.com/login/oauth/authorize".to_string(),
-    token_endpoint: "https://github.com/login/oauth/access_token".to_string(),
-    redirect_uri: "http://127.0.0.1:8080/callback".to_string(),
-    scope: Some("repo user".to_string()),
-    device_authorization_endpoint: Some("https://github.com/login/device/code".to_string()),
-};
+// Configure OAuth for GitHub using preset (one line!)
+let config = OAuthConfig::github("your-client-id", Some("repo user"));
 
 // Create OAuth client
 let client = OAuthClient::new(config, storage.clone());
@@ -171,6 +193,13 @@ match client.authorize_device() {
     Err(e) => eprintln!("Authorization failed: {}", e),
 }
 ```
+
+**Available Provider Presets:**
+- `OAuthConfig::github(client_id, scopes)` - GitHub
+- `OAuthConfig::google(client_id, scopes)` - Google  
+- `OAuthConfig::microsoft(client_id, tenant, scopes)` - Microsoft/Azure AD
+- `OAuthConfig::gitlab(client_id, scopes, gitlab_url)` - GitLab (cloud or self-hosted)
+- `OAuthConfig::tuist(client_id, scopes, tuist_url)` - Tuist (cloud or self-hosted)
 
 #### Authorization Code Flow with Automatic Callback
 

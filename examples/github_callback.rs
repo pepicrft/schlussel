@@ -27,15 +27,8 @@ fn main() {
     let storage =
         Arc::new(FileStorage::new("schlussel-examples").expect("Failed to create file storage"));
 
-    // Configure OAuth for GitHub
-    let config = OAuthConfig {
-        client_id,
-        authorization_endpoint: "https://github.com/login/oauth/authorize".to_string(),
-        token_endpoint: "https://github.com/login/oauth/access_token".to_string(),
-        redirect_uri: "http://127.0.0.1/callback".to_string(), // Will be overridden by callback server
-        scope: Some("repo user".to_string()),
-        device_authorization_endpoint: None, // Not using Device Flow
-    };
+    // Configure OAuth for GitHub using preset
+    let config = OAuthConfig::github(client_id, Some("repo user"));
 
     // Create OAuth client
     let client = OAuthClient::new(config, storage.clone());
