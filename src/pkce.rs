@@ -1,6 +1,5 @@
 /// PKCE (Proof Key for Code Exchange) implementation
 /// RFC 7636: https://tools.ietf.org/html/rfc7636
-
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use rand::Rng;
 use sha2::{Digest, Sha256};

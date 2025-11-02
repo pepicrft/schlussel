@@ -56,11 +56,53 @@ mise run build
 
 ### Rust API
 
+#### Using File-Based Storage (Recommended for CLI apps)
+
 ```rust
 use schlussel::prelude::*;
 use std::sync::Arc;
 
-// Create storage
+// Create file storage with your app name (uses XDG_DATA_HOME or platform equivalent)
+let storage = Arc::new(FileStorage::new("my-app").unwrap());
+
+// Configure OAuth
+let config = OAuthConfig {
+    client_id: "your-client-id".to_string(),
+    authorization_endpoint: "https://accounts.example.com/oauth/authorize".to_string(),
+    token_endpoint: "https://accounts.example.com/token".to_string(),
+    redirect_uri: "http://localhost:8080/callback".to_string(),
+    scope: Some("read write".to_string()),
+};
+
+// Create OAuth client
+let client = Arc::new(OAuthClient::new(config, storage.clone()));
+
+// Start OAuth flow
+let result = client.start_auth_flow().unwrap();
+println!("Authorization URL: {}", result.url);
+
+// Save token with domain binding for better organization
+// Format: "domain:identifier"
+let token = Token { /* ... */ };
+client.save_token("accounts.example.com:user@example.com", token).unwrap();
+
+// Create token refresher
+let refresher = TokenRefresher::new(client.clone());
+
+// Refresh token with concurrency control
+let token = refresher.refresh_token("accounts.example.com:user@example.com", "refresh-token").unwrap();
+
+// Before exit, wait for refresh
+refresher.wait_for_refresh("accounts.example.com:user@example.com");
+```
+
+#### Using In-Memory Storage (For testing)
+
+```rust
+use schlussel::prelude::*;
+use std::sync::Arc;
+
+// Create in-memory storage
 let storage = Arc::new(MemoryStorage::new());
 
 // Configure OAuth
@@ -110,25 +152,53 @@ refresher.wait_for_refresh("token-key");
    - Token storage and retrieval
    - Token refresher with concurrency control
 
-### Storage Interface
+### Storage Backends
+
+#### Built-in Storage Options
+
+1. **FileStorage** (Recommended for production CLI apps)
+   - Stores sessions and tokens in JSON files
+   - Follows XDG Base Directory specification
+   - Configurable application name for storage path
+   - Location (when using `FileStorage::new("my-app")`):
+     - Linux/macOS: `~/.local/share/my-app/`
+     - Windows: `%APPDATA%\my-app\`
+   - **Domain-based organization**: Both sessions and tokens are stored in separate files per domain
+     - Session format: `sessions_<domain>.json`
+     - Token format: `tokens_<domain>.json`
+     - Example: `sessions_github.com.json`, `tokens_github.com.json`
+   - Sessions can optionally specify a domain using `Session::with_domain()`
+     - If no domain is specified, defaults to `sessions_default.json`
+   - Token keys use format: `domain:identifier`
+     - Example: `github.com:user@example.com`
+   - Alternative: Use `FileStorage::with_path(path)` for custom directory
+
+2. **MemoryStorage**
+   - In-memory storage using `HashMap`
+   - Thread-safe with `parking_lot::RwLock`
+   - Not persistent (data lost on exit)
+   - Suitable for testing
+
+#### Custom Storage
 
 Implement your own storage backend by implementing the `SessionStorage` trait:
 
 ```rust
 pub trait SessionStorage: Send + Sync {
-    fn save_session(&self, state: &str, session: Session) -> Result<(), Box<dyn std::error::Error>>;
-    fn get_session(&self, state: &str) -> Result<Option<Session>, Box<dyn std::error::Error>>;
-    fn delete_session(&self, state: &str) -> Result<(), Box<dyn std::error::Error>>;
-    fn save_token(&self, key: &str, token: Token) -> Result<(), Box<dyn std::error::Error>>;
-    fn get_token(&self, key: &str) -> Result<Option<Token>, Box<dyn std::error::Error>>;
-    fn delete_token(&self, key: &str) -> Result<(), Box<dyn std::error::Error>>;
+    fn save_session(&self, state: &str, session: Session) -> Result<(), String>;
+    fn get_session(&self, state: &str) -> Result<Option<Session>, String>;
+    fn delete_session(&self, state: &str) -> Result<(), String>;
+    fn save_token(&self, key: &str, token: Token) -> Result<(), String>;
+    fn get_token(&self, key: &str) -> Result<Option<Token>, String>;
+    fn delete_token(&self, key: &str) -> Result<(), String>;
 }
 ```
 
-Example storage implementations:
-- File-based storage (JSON, SQLite)
-- Keychain/Credential Manager integration
-- Encrypted storage
+Potential custom implementations:
+- SQLite database
+- Encrypted file storage
+- Keychain/Credential Manager integration (OS-specific)
+- Cloud-synced storage
 
 ## Cross-Platform Builds
 

@@ -1,12 +1,11 @@
 /// OAuth 2.0 flow orchestration
-
 use crate::pkce::Pkce;
 use crate::session::{Session, SessionStorage, Token};
+use parking_lot::Mutex;
 use rand::Rng;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use parking_lot::Mutex;
-use std::collections::HashMap;
 
 /// OAuth 2.0 configuration
 #[derive(Debug, Clone)]

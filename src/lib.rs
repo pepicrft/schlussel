@@ -38,7 +38,7 @@ pub mod session;
 pub mod prelude {
     pub use crate::oauth::{AuthFlowResult, OAuthClient, OAuthConfig, TokenRefresher};
     pub use crate::pkce::Pkce;
-    pub use crate::session::{MemoryStorage, Session, SessionStorage, Token};
+    pub use crate::session::{FileStorage, MemoryStorage, Session, SessionStorage, Token};
 }
 
 #[cfg(test)]
