@@ -23,6 +23,7 @@
 //!     token_endpoint: "https://auth.example.com/token".to_string(),
 //!     redirect_uri: "http://localhost:8080/callback".to_string(),
 //!     scope: Some("read write".to_string()),
+//!     device_authorization_endpoint: None,
 //! };
 //!
 //! let client = OAuthClient::new(config, storage);
@@ -30,13 +31,19 @@
 //! println!("Authorization URL: {}", result.url);
 //! ```
 
+pub mod callback;
+pub mod error;
 pub mod oauth;
 pub mod pkce;
 pub mod session;
 
 /// Prelude module for convenient imports
 pub mod prelude {
-    pub use crate::oauth::{AuthFlowResult, OAuthClient, OAuthConfig, TokenRefresher};
+    pub use crate::callback::{CallbackResult, CallbackServer};
+    pub use crate::error::{OAuthError, Result};
+    pub use crate::oauth::{
+        AuthFlowResult, DeviceAuthorizationResponse, OAuthClient, OAuthConfig, TokenRefresher,
+    };
     pub use crate::pkce::Pkce;
     pub use crate::session::{FileStorage, MemoryStorage, Session, SessionStorage, Token};
 }
@@ -48,6 +55,8 @@ mod tests {
 
     #[test]
     fn test_full_oauth_flow() {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
         let storage = Arc::new(MemoryStorage::new());
         let config = OAuthConfig {
             client_id: "test-client".to_string(),
@@ -55,6 +64,7 @@ mod tests {
             token_endpoint: "https://auth.example.com/token".to_string(),
             redirect_uri: "http://localhost:8080/callback".to_string(),
             scope: Some("read write".to_string()),
+            device_authorization_endpoint: None,
         };
 
         let client = Arc::new(OAuthClient::new(config, storage.clone()));
@@ -67,11 +77,25 @@ mod tests {
         let session = storage.get_session(&result.state).unwrap();
         assert!(session.is_some());
 
-        // Test token refresher
-        let refresher = TokenRefresher::new(client.clone());
-        let token = refresher.refresh_token("test-key", "test-refresh").unwrap();
+        // Test token storage and retrieval
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
 
-        assert!(!token.access_token.is_empty());
-        assert!(!token.is_expired());
+        let token = Token {
+            access_token: "test_access_token".to_string(),
+            refresh_token: Some("test_refresh_token".to_string()),
+            token_type: "Bearer".to_string(),
+            expires_in: Some(3600),
+            expires_at: Some(now + 3600),
+            scope: Some("read write".to_string()),
+        };
+
+        client.save_token("test-key", token.clone()).unwrap();
+
+        let retrieved = client.get_token("test-key").unwrap();
+        assert!(retrieved.is_some());
+        assert_eq!(retrieved.unwrap().access_token, "test_access_token");
     }
 }

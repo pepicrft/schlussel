@@ -1,11 +1,15 @@
 /// OAuth 2.0 flow orchestration
+use crate::error::{OAuthError, Result};
 use crate::pkce::Pkce;
 use crate::session::{Session, SessionStorage, Token};
 use parking_lot::Mutex;
 use rand::Rng;
+use reqwest::blocking::Client;
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::thread;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// OAuth 2.0 configuration
 #[derive(Debug, Clone)]
@@ -15,6 +19,8 @@ pub struct OAuthConfig {
     pub token_endpoint: String,
     pub redirect_uri: String,
     pub scope: Option<String>,
+    /// Optional device authorization endpoint for Device Code Flow (RFC 8628)
+    pub device_authorization_endpoint: Option<String>,
 }
 
 /// Authorization flow result
@@ -24,25 +30,79 @@ pub struct AuthFlowResult {
     pub state: String,
 }
 
+/// Device authorization response (RFC 8628)
+#[derive(Debug, Clone, Deserialize)]
+pub struct DeviceAuthorizationResponse {
+    pub device_code: String,
+    pub user_code: String,
+    pub verification_uri: String,
+    #[serde(default)]
+    pub verification_uri_complete: Option<String>,
+    pub expires_in: u64,
+    #[serde(default = "default_interval")]
+    pub interval: u64,
+}
+
+fn default_interval() -> u64 {
+    5
+}
+
+/// Token response from OAuth server
+#[derive(Debug, Clone, Deserialize)]
+struct TokenResponse {
+    access_token: String,
+    #[serde(default)]
+    refresh_token: Option<String>,
+    token_type: String,
+    #[serde(default)]
+    expires_in: Option<u64>,
+    #[serde(default)]
+    scope: Option<String>,
+}
+
+/// Error response from OAuth server
+#[derive(Debug, Deserialize)]
+struct ErrorResponse {
+    error: String,
+    #[serde(default)]
+    error_description: Option<String>,
+}
+
 /// OAuth 2.0 client
 ///
-/// Manages the OAuth authorization code flow with PKCE.
+/// Manages OAuth authorization code flow with PKCE and Device Code Flow.
 pub struct OAuthClient<S: SessionStorage> {
     config: OAuthConfig,
     storage: Arc<S>,
+    http_client: Client,
 }
 
 impl<S: SessionStorage> OAuthClient<S> {
     /// Create a new OAuth client
     pub fn new(config: OAuthConfig, storage: Arc<S>) -> Self {
-        Self { config, storage }
+        Self {
+            config,
+            storage,
+            http_client: Client::new(),
+        }
     }
 
-    /// Start the OAuth authorization flow
+    /// Complete authorization code flow with automatic callback server
     ///
-    /// Generates a PKCE challenge, creates a session, and returns the
-    /// authorization URL that the user should open.
-    pub fn start_auth_flow(&self) -> Result<AuthFlowResult, String> {
+    /// This is the recommended method for CLI applications. It:
+    /// 1. Starts a local callback server
+    /// 2. Opens the authorization URL in the user's browser
+    /// 3. Waits for the OAuth callback
+    /// 4. Exchanges the code for a token
+    ///
+    /// Returns the access token or an error.
+    pub fn authorize(&self) -> Result<Token> {
+        use crate::callback::CallbackServer;
+
+        // Start callback server on random port
+        let server = CallbackServer::new()?;
+        let redirect_uri = server.redirect_uri();
+
         // Generate PKCE challenge
         let pkce = Pkce::generate();
 
@@ -53,7 +113,60 @@ impl<S: SessionStorage> OAuthClient<S> {
 
         // Save session
         let session = Session::new(state.clone(), pkce.code_verifier().to_string());
-        self.storage.save_session(&state, session)?;
+        self.storage
+            .save_session(&state, session)
+            .map_err(OAuthError::StorageError)?;
+
+        // Build authorization URL with callback server's redirect URI
+        let mut url = format!(
+            "{}?client_id={}&redirect_uri={}&response_type=code&state={}&code_challenge={}&code_challenge_method={}",
+            self.config.authorization_endpoint,
+            urlencoding::encode(&self.config.client_id),
+            urlencoding::encode(&redirect_uri),
+            state,
+            pkce.code_challenge(),
+            Pkce::code_challenge_method()
+        );
+
+        if let Some(scope) = &self.config.scope {
+            url.push_str(&format!("&scope={}", urlencoding::encode(scope)));
+        }
+
+        // Open browser
+        println!("\n=== Authorization Required ===");
+        println!("Opening browser for authorization...");
+        println!("If the browser doesn't open, visit: {}", url);
+
+        let _ = webbrowser::open(&url);
+
+        // Wait for callback (30 second timeout)
+        println!("Waiting for authorization...");
+        let callback_result = server.wait_for_callback(Duration::from_secs(30))?;
+
+        // Exchange code for token
+        self.exchange_code(&callback_result.code, &callback_result.state)
+    }
+
+    /// Start the OAuth authorization flow with PKCE
+    ///
+    /// Generates a PKCE challenge, creates a session, and returns the
+    /// authorization URL that the user should open.
+    ///
+    /// For a complete flow with automatic callback handling, use `authorize()` instead.
+    pub fn start_auth_flow(&self) -> Result<AuthFlowResult> {
+        // Generate PKCE challenge
+        let pkce = Pkce::generate();
+
+        // Generate random state
+        let mut rng = rand::thread_rng();
+        let state_bytes: [u8; 16] = rng.gen();
+        let state = hex::encode(&state_bytes);
+
+        // Save session
+        let session = Session::new(state.clone(), pkce.code_verifier().to_string());
+        self.storage
+            .save_session(&state, session)
+            .map_err(OAuthError::StorageError)?;
 
         // Build authorization URL
         let url = self.build_auth_url(&state, pkce.code_challenge())?;
@@ -61,7 +174,207 @@ impl<S: SessionStorage> OAuthClient<S> {
         Ok(AuthFlowResult { url, state })
     }
 
-    fn build_auth_url(&self, state: &str, code_challenge: &str) -> Result<String, String> {
+    /// Start Device Code Flow (RFC 8628)
+    ///
+    /// This flow is ideal for input-constrained devices and CLI applications.
+    /// Returns device authorization info and automatically polls for completion.
+    pub fn authorize_device(&self) -> Result<Token> {
+        let device_endpoint = self
+            .config
+            .device_authorization_endpoint
+            .as_ref()
+            .ok_or_else(|| {
+                OAuthError::InvalidResponse("device_authorization_endpoint not configured".into())
+            })?;
+
+        // Step 1: Request device and user codes
+        let mut params = vec![("client_id", self.config.client_id.as_str())];
+        if let Some(scope) = &self.config.scope {
+            params.push(("scope", scope.as_str()));
+        }
+
+        let response = self
+            .http_client
+            .post(device_endpoint)
+            .form(&params)
+            .send()?;
+
+        if !response.status().is_success() {
+            let error: ErrorResponse = response.json()?;
+            return Err(OAuthError::OAuthErrorResponse {
+                error: error.error,
+                description: error.error_description,
+            });
+        }
+
+        let device_auth: DeviceAuthorizationResponse = response.json()?;
+
+        // Step 2: Display instructions to user
+        println!("\n=== Device Authorization ===");
+        println!("Please visit: {}", device_auth.verification_uri);
+        println!("And enter code: {}", device_auth.user_code);
+
+        if let Some(complete_uri) = &device_auth.verification_uri_complete {
+            println!("\nOr visit this URL directly:");
+            println!("{}", complete_uri);
+        }
+
+        println!("\nWaiting for authorization...");
+
+        // Try to open browser automatically
+        if let Some(complete_uri) = &device_auth.verification_uri_complete {
+            let _ = webbrowser::open(complete_uri);
+        } else {
+            let _ = webbrowser::open(&device_auth.verification_uri);
+        }
+
+        // Step 3: Poll for token
+        self.poll_for_device_token(&device_auth)
+    }
+
+    fn poll_for_device_token(&self, device_auth: &DeviceAuthorizationResponse) -> Result<Token> {
+        let mut interval = Duration::from_secs(device_auth.interval);
+        let expiration = SystemTime::now() + Duration::from_secs(device_auth.expires_in);
+
+        loop {
+            if SystemTime::now() > expiration {
+                return Err(OAuthError::DeviceCodeExpired);
+            }
+
+            thread::sleep(interval);
+
+            let params = vec![
+                ("client_id", self.config.client_id.as_str()),
+                ("device_code", device_auth.device_code.as_str()),
+                ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
+            ];
+
+            let response = self
+                .http_client
+                .post(&self.config.token_endpoint)
+                .form(&params)
+                .send()?;
+
+            if response.status().is_success() {
+                let token_response: TokenResponse = response.json()?;
+                return Ok(self.convert_token_response(token_response));
+            }
+
+            // Handle error responses
+            let error: ErrorResponse = response.json()?;
+            match error.error.as_str() {
+                "authorization_pending" => {
+                    // Continue polling
+                    continue;
+                }
+                "slow_down" => {
+                    // Increase interval by 5 seconds
+                    interval += Duration::from_secs(5);
+                    continue;
+                }
+                "access_denied" => {
+                    return Err(OAuthError::AuthorizationDenied);
+                }
+                "expired_token" => {
+                    return Err(OAuthError::DeviceCodeExpired);
+                }
+                _ => {
+                    return Err(OAuthError::OAuthErrorResponse {
+                        error: error.error,
+                        description: error.error_description,
+                    });
+                }
+            }
+        }
+    }
+
+    /// Exchange authorization code for access token
+    pub fn exchange_code(&self, code: &str, state: &str) -> Result<Token> {
+        // Retrieve session
+        let session = self
+            .storage
+            .get_session(state)
+            .map_err(OAuthError::StorageError)?
+            .ok_or(OAuthError::InvalidState)?;
+
+        // Build token request
+        let params = vec![
+            ("client_id", self.config.client_id.as_str()),
+            ("grant_type", "authorization_code"),
+            ("code", code),
+            ("redirect_uri", self.config.redirect_uri.as_str()),
+            ("code_verifier", session.code_verifier.as_str()),
+        ];
+
+        let response = self
+            .http_client
+            .post(&self.config.token_endpoint)
+            .form(&params)
+            .send()?;
+
+        if !response.status().is_success() {
+            let error: ErrorResponse = response.json()?;
+            return Err(OAuthError::OAuthErrorResponse {
+                error: error.error,
+                description: error.error_description,
+            });
+        }
+
+        let token_response: TokenResponse = response.json()?;
+
+        // Delete session after successful exchange
+        self.storage
+            .delete_session(state)
+            .map_err(OAuthError::StorageError)?;
+
+        Ok(self.convert_token_response(token_response))
+    }
+
+    /// Refresh an access token
+    pub fn refresh_token(&self, refresh_token: &str) -> Result<Token> {
+        let params = vec![
+            ("client_id", self.config.client_id.as_str()),
+            ("grant_type", "refresh_token"),
+            ("refresh_token", refresh_token),
+        ];
+
+        let response = self
+            .http_client
+            .post(&self.config.token_endpoint)
+            .form(&params)
+            .send()?;
+
+        if !response.status().is_success() {
+            let error: ErrorResponse = response.json()?;
+            return Err(OAuthError::OAuthErrorResponse {
+                error: error.error,
+                description: error.error_description,
+            });
+        }
+
+        let token_response: TokenResponse = response.json()?;
+        Ok(self.convert_token_response(token_response))
+    }
+
+    fn convert_token_response(&self, response: TokenResponse) -> Token {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        let expires_at = response.expires_in.map(|exp| now + exp);
+
+        Token {
+            access_token: response.access_token,
+            refresh_token: response.refresh_token,
+            token_type: response.token_type,
+            expires_in: response.expires_in,
+            expires_at,
+            scope: response.scope,
+        }
+    }
+
+    fn build_auth_url(&self, state: &str, code_challenge: &str) -> Result<String> {
         let mut url = format!(
             "{}?client_id={}&redirect_uri={}&response_type=code&state={}&code_challenge={}&code_challenge_method={}",
             self.config.authorization_endpoint,
@@ -80,13 +393,17 @@ impl<S: SessionStorage> OAuthClient<S> {
     }
 
     /// Get a token by key
-    pub fn get_token(&self, key: &str) -> Result<Option<Token>, String> {
-        self.storage.get_token(key)
+    pub fn get_token(&self, key: &str) -> Result<Option<Token>> {
+        self.storage
+            .get_token(key)
+            .map_err(OAuthError::StorageError)
     }
 
     /// Save a token
-    pub fn save_token(&self, key: &str, token: Token) -> Result<(), String> {
-        self.storage.save_token(key, token)
+    pub fn save_token(&self, key: &str, token: Token) -> Result<()> {
+        self.storage
+            .save_token(key, token)
+            .map_err(OAuthError::StorageError)
     }
 }
 
@@ -111,7 +428,17 @@ impl<S: SessionStorage> TokenRefresher<S> {
     ///
     /// If a refresh is already in progress for the key, this will wait
     /// for it to complete and return the refreshed token.
-    pub fn refresh_token(&self, key: &str, refresh_token: &str) -> Result<Token, String> {
+    pub fn refresh_token_for_key(&self, key: &str) -> Result<Token> {
+        // Get the current token to extract refresh_token
+        let current_token = self
+            .client
+            .get_token(key)?
+            .ok_or_else(|| OAuthError::InvalidResponse("Token not found".into()))?;
+
+        let refresh_token = current_token
+            .refresh_token
+            .ok_or(OAuthError::NoRefreshToken)?;
+
         // Check if refresh is in progress
         {
             let in_progress = self.refresh_in_progress.lock();
@@ -120,7 +447,7 @@ impl<S: SessionStorage> TokenRefresher<S> {
 
                 // Wait for refresh to complete
                 loop {
-                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    thread::sleep(Duration::from_millis(100));
                     let in_progress = self.refresh_in_progress.lock();
                     if !in_progress.get(key).copied().unwrap_or(false) {
                         break;
@@ -128,10 +455,9 @@ impl<S: SessionStorage> TokenRefresher<S> {
                 }
 
                 // Get the refreshed token
-                return self
-                    .client
-                    .get_token(key)?
-                    .ok_or_else(|| "Token not found after refresh".to_string());
+                return self.client.get_token(key)?.ok_or_else(|| {
+                    OAuthError::InvalidResponse("Token not found after refresh".into())
+                });
             }
         }
 
@@ -142,7 +468,7 @@ impl<S: SessionStorage> TokenRefresher<S> {
         }
 
         // Perform the actual refresh
-        let result = self.do_refresh(key, refresh_token);
+        let result = self.do_refresh(key, &refresh_token);
 
         // Mark refresh as complete
         {
@@ -153,26 +479,10 @@ impl<S: SessionStorage> TokenRefresher<S> {
         result
     }
 
-    fn do_refresh(&self, key: &str, refresh_token: &str) -> Result<Token, String> {
-        // In a real implementation, this would make an HTTP request to the token endpoint
-        // For now, we'll create a mock token
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-
-        let token = Token {
-            access_token: "new_access_token".to_string(),
-            refresh_token: Some(refresh_token.to_string()),
-            token_type: "Bearer".to_string(),
-            expires_in: Some(3600),
-            expires_at: Some(now + 3600),
-            scope: None,
-        };
-
-        self.client.save_token(key, token.clone())?;
-
-        Ok(token)
+    fn do_refresh(&self, key: &str, refresh_token: &str) -> Result<Token> {
+        let new_token = self.client.refresh_token(refresh_token)?;
+        self.client.save_token(key, new_token.clone())?;
+        Ok(new_token)
     }
 
     /// Wait for any in-progress refresh to complete
@@ -183,12 +493,12 @@ impl<S: SessionStorage> TokenRefresher<S> {
                 break;
             }
             drop(in_progress);
-            std::thread::sleep(std::time::Duration::from_millis(100));
+            thread::sleep(Duration::from_millis(100));
         }
     }
 }
 
-// Add hex and urlencoding to dependencies
+// Helper modules
 mod hex {
     pub fn encode(bytes: &[u8]) -> String {
         bytes.iter().map(|b| format!("{:02x}", b)).collect()
@@ -201,7 +511,13 @@ mod urlencoding {
             .map(|c| match c {
                 'A'..='Z' | 'a'..='z' | '0'..='9' | '-' | '_' | '.' | '~' => c.to_string(),
                 ' ' => "+".to_string(),
-                _ => format!("%{:02X}", c as u8),
+                _ => {
+                    let mut buf = [0; 4];
+                    c.encode_utf8(&mut buf)
+                        .bytes()
+                        .map(|b| format!("%{:02X}", b))
+                        .collect()
+                }
             })
             .collect()
     }
@@ -221,6 +537,7 @@ mod tests {
             token_endpoint: "https://auth.example.com/token".to_string(),
             redirect_uri: "http://localhost:8080/callback".to_string(),
             scope: Some("read write".to_string()),
+            device_authorization_endpoint: None,
         };
 
         let client = OAuthClient::new(config, storage.clone());
@@ -246,17 +563,27 @@ mod tests {
             token_endpoint: "https://auth.example.com/token".to_string(),
             redirect_uri: "http://localhost:8080/callback".to_string(),
             scope: None,
+            device_authorization_endpoint: None,
         };
 
         let client = Arc::new(OAuthClient::new(config, storage.clone()));
-        let refresher = TokenRefresher::new(client.clone());
 
-        let token = refresher
-            .refresh_token("test-key", "test-refresh-token")
-            .unwrap();
+        // Save a token with refresh token
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
 
-        assert_eq!(token.access_token, "new_access_token");
-        assert_eq!(token.token_type, "Bearer");
+        let token = Token {
+            access_token: "test_access".to_string(),
+            refresh_token: Some("test_refresh".to_string()),
+            token_type: "Bearer".to_string(),
+            expires_in: Some(3600),
+            expires_at: Some(now + 3600),
+            scope: None,
+        };
+
+        client.save_token("test-key", token).unwrap();
 
         // Verify token was saved
         let saved_token = client.get_token("test-key").unwrap();

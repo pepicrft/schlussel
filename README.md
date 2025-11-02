@@ -5,14 +5,85 @@ A cross-platform OAuth 2.0 library with PKCE support for command-line applicatio
 ## Features
 
 - **OAuth 2.0 Authorization Code Flow** with PKCE (RFC 7636)
+- **Device Code Flow** (RFC 8628) - Perfect for CLI applications and headless environments
+- **Automatic Browser Integration**: Opens authorization URL and handles callback
+- **Local Callback Server**: Built-in HTTP server for OAuth redirects
+- **HTTP Token Exchange**: Complete implementation with reqwest
 - **Cross-platform**: Builds for Linux, macOS, and Windows (x86_64 and ARM64)
 - **Pluggable Storage**: Trait-based storage backend (implement `SessionStorage`)
 - **Concurrency Control**: Thread-safe token refresh with automatic locking using `parking_lot`
 - **Pure Rust**: Safe, fast, and reliable with Rust's memory safety guarantees
 
-## What is PKCE?
+## OAuth Flows Explained
+
+### What is PKCE?
 
 PKCE (Proof Key for Code Exchange) is an extension to OAuth 2.0 that makes the authorization code flow more secure for public clients like CLI applications. Instead of using a client secret (which cannot be kept secret in a CLI app), PKCE uses a dynamically generated code challenge.
+
+### Which Flow Should I Use?
+
+#### Device Code Flow (RFC 8628) - **Recommended for CLI**
+
+**When to use:**
+- CLI applications
+- Headless/remote environments (SSH sessions, Docker containers)
+- Input-constrained devices
+- When you want the simplest implementation
+
+**Pros:**
+- No callback server needed
+- Works in any environment where the user has a browser on another device
+- Simple to implement
+- Better UX for remote/headless scenarios
+
+**Cons:**
+- Requires OAuth provider support (GitHub, Google, Microsoft, etc.)
+- User needs to manually enter a code (though auto-open helps)
+
+**Example providers:** GitHub, Google, Microsoft, GitLab, Okta
+
+#### Authorization Code Flow with Callback Server
+
+**When to use:**
+- Desktop applications with GUI
+- Local development environments
+- When Device Code Flow is not supported by the OAuth provider
+
+**Pros:**
+- Fully automated (no manual code entry)
+- Works with any OAuth 2.0 provider
+- Faster than Device Code Flow
+
+**Cons:**
+- Requires starting a local HTTP server
+- May not work in some network environments
+- Slightly more complex implementation
+
+### Provider Support
+
+| Provider | Device Code Flow | Authorization Code Flow |
+|----------|-----------------|------------------------|
+| GitHub | ✅ | ✅ |
+| Google | ✅ | ✅ |
+| Microsoft | ✅ | ✅ |
+| GitLab | ✅ | ✅ |
+| Okta | ✅ | ✅ |
+| Auth0 | ❌ | ✅ |
+| Generic OAuth 2.0 | Varies | ✅ |
+
+## Quick Start
+
+Check out the [examples/](examples/) directory for working examples:
+
+- **[github_device_flow.rs](examples/github_device_flow.rs)** - Device Code Flow with GitHub
+- **[github_callback.rs](examples/github_callback.rs)** - Authorization Code Flow with callback server
+- **[token_refresh.rs](examples/token_refresh.rs)** - Token expiration and refresh patterns
+
+Run an example:
+```bash
+export GITHUB_CLIENT_ID="your_client_id"
+cargo run --example github_device_flow
+```
 
 ## Installation
 
@@ -56,44 +127,162 @@ mise run build
 
 ### Rust API
 
-#### Using File-Based Storage (Recommended for CLI apps)
+#### Quick Start: Device Code Flow (Recommended)
+
+The **Device Code Flow** is the easiest way to add OAuth to CLI applications. It works great for headless environments and doesn't require a callback server.
 
 ```rust
 use schlussel::prelude::*;
 use std::sync::Arc;
 
-// Create file storage with your app name (uses XDG_DATA_HOME or platform equivalent)
+// Create file storage
 let storage = Arc::new(FileStorage::new("my-app").unwrap());
 
-// Configure OAuth
+// Configure OAuth with Device Code Flow
+let config = OAuthConfig {
+    client_id: "your-client-id".to_string(),
+    authorization_endpoint: "https://github.com/login/oauth/authorize".to_string(),
+    token_endpoint: "https://github.com/login/oauth/access_token".to_string(),
+    redirect_uri: "http://127.0.0.1:8080/callback".to_string(),
+    scope: Some("repo user".to_string()),
+    device_authorization_endpoint: Some("https://github.com/login/device/code".to_string()),
+};
+
+// Create OAuth client
+let client = OAuthClient::new(config, storage.clone());
+
+// Authorize using Device Code Flow
+// This will:
+// 1. Display a URL and code to the user
+// 2. Open the browser automatically
+// 3. Poll for authorization completion
+// 4. Return the access token
+match client.authorize_device() {
+    Ok(token) => {
+        println!("Successfully authorized!");
+        println!("Access token: {}", token.access_token);
+        
+        // Save token for later use
+        client.save_token("github.com:my-app", token).unwrap();
+    }
+    Err(e) => eprintln!("Authorization failed: {}", e),
+}
+```
+
+#### Authorization Code Flow with Automatic Callback
+
+For traditional OAuth with automatic browser handling and local callback server:
+
+```rust
+use schlussel::prelude::*;
+use std::sync::Arc;
+
+// Create file storage
+let storage = Arc::new(FileStorage::new("my-app").unwrap());
+
+// Configure OAuth (note: device_authorization_endpoint is optional for this flow)
+let config = OAuthConfig {
+    client_id: "your-client-id".to_string(),
+    authorization_endpoint: "https://accounts.example.com/oauth/authorize".to_string(),
+    token_endpoint: "https://accounts.example.com/token".to_string(),
+    redirect_uri: "http://127.0.0.1/callback".to_string(), // Will be overridden by callback server
+    scope: Some("read write".to_string()),
+    device_authorization_endpoint: None,
+};
+
+// Create OAuth client
+let client = OAuthClient::new(config, storage.clone());
+
+// Complete authorization flow automatically
+// This will:
+// 1. Start a local callback server
+// 2. Open the browser with the authorization URL
+// 3. Wait for the OAuth callback
+// 4. Exchange the code for a token
+match client.authorize() {
+    Ok(token) => {
+        println!("Successfully authorized!");
+        
+        // Save token with domain:identifier format
+        client.save_token("example.com:user@example.com", token).unwrap();
+    }
+    Err(e) => eprintln!("Authorization failed: {}", e),
+}
+```
+
+#### Manual Flow Control
+
+For more control over the OAuth flow:
+
+```rust
+use schlussel::prelude::*;
+use std::sync::Arc;
+
+let storage = Arc::new(FileStorage::new("my-app").unwrap());
 let config = OAuthConfig {
     client_id: "your-client-id".to_string(),
     authorization_endpoint: "https://accounts.example.com/oauth/authorize".to_string(),
     token_endpoint: "https://accounts.example.com/token".to_string(),
     redirect_uri: "http://localhost:8080/callback".to_string(),
     scope: Some("read write".to_string()),
+    device_authorization_endpoint: None,
 };
 
-// Create OAuth client
+let client = OAuthClient::new(config, storage.clone());
+
+// Start auth flow and get URL
+let result = client.start_auth_flow().unwrap();
+println!("Please visit: {}", result.url);
+
+// ... user completes authorization in browser ...
+
+// Exchange code for token (you need to capture code and state from callback)
+let token = client.exchange_code("authorization-code", &result.state).unwrap();
+
+// Save token
+client.save_token("example.com:user", token).unwrap();
+```
+
+#### Token Refresh
+
+```rust
+use schlussel::prelude::*;
+use std::sync::Arc;
+
 let client = Arc::new(OAuthClient::new(config, storage.clone()));
 
-// Start OAuth flow
-let result = client.start_auth_flow().unwrap();
-println!("Authorization URL: {}", result.url);
+// Get existing token
+let mut token = client.get_token("example.com:user").unwrap().unwrap();
 
-// Save token with domain binding for better organization
-// Format: "domain:identifier"
-let token = Token { /* ... */ };
-client.save_token("accounts.example.com:user@example.com", token).unwrap();
+// Check if expired and refresh
+if token.is_expired() {
+    if let Some(refresh_token) = &token.refresh_token {
+        token = client.refresh_token(refresh_token).unwrap();
+        client.save_token("example.com:user", token.clone()).unwrap();
+    }
+}
 
-// Create token refresher
+// Use token
+println!("Access token: {}", token.access_token);
+```
+
+#### Thread-Safe Token Refresh
+
+For concurrent applications, use `TokenRefresher` to prevent multiple simultaneous refreshes:
+
+```rust
+use schlussel::prelude::*;
+use std::sync::Arc;
+
+let client = Arc::new(OAuthClient::new(config, storage));
 let refresher = TokenRefresher::new(client.clone());
 
 // Refresh token with concurrency control
-let token = refresher.refresh_token("accounts.example.com:user@example.com", "refresh-token").unwrap();
+// If another thread is already refreshing this token, this will wait
+let token = refresher.refresh_token_for_key("example.com:user").unwrap();
 
-// Before exit, wait for refresh
-refresher.wait_for_refresh("accounts.example.com:user@example.com");
+// Before application exit, wait for any pending refreshes
+refresher.wait_for_refresh("example.com:user");
 ```
 
 #### Using In-Memory Storage (For testing)
