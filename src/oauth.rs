@@ -584,6 +584,130 @@ impl<S: SessionStorage> TokenRefresher<S> {
         Ok(new_token)
     }
 
+    /// Get a valid token, automatically refreshing if expired
+    ///
+    /// This is the recommended method for CLI applications. It:
+    /// 1. Retrieves the token from storage
+    /// 2. Checks if the token is expired
+    /// 3. Automatically refreshes if needed
+    /// 4. Returns a valid, non-expired token
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use schlussel::prelude::*;
+    /// use std::sync::Arc;
+    ///
+    /// # let storage = Arc::new(MemoryStorage::new());
+    /// # let config = OAuthConfig {
+    /// #     client_id: "test".to_string(),
+    /// #     authorization_endpoint: "https://test.com/auth".to_string(),
+    /// #     token_endpoint: "https://test.com/token".to_string(),
+    /// #     redirect_uri: "http://localhost".to_string(),
+    /// #     scope: None,
+    /// #     device_authorization_endpoint: None,
+    /// # };
+    /// let client = Arc::new(OAuthClient::new(config, storage));
+    /// let refresher = TokenRefresher::with_file_locking(client, "my-app").unwrap();
+    ///
+    /// // Automatically refreshes if expired
+    /// let token = refresher.get_valid_token("github.com:user").unwrap();
+    /// println!("Access token: {}", token.access_token);
+    /// ```
+    pub fn get_valid_token(&self, key: &str) -> Result<Token> {
+        let token = self
+            .client
+            .get_token(key)?
+            .ok_or_else(|| OAuthError::InvalidResponse("Token not found".into()))?;
+
+        // Check if token is expired
+        if token.is_expired() {
+            // Token is expired, refresh it
+            return self.refresh_token_for_key(key);
+        }
+
+        Ok(token)
+    }
+
+    /// Get a valid token with proactive refresh
+    ///
+    /// This method refreshes the token before it actually expires, providing
+    /// a safety margin. For example, with a threshold of 0.8, the token will
+    /// be refreshed when 80% of its lifetime has elapsed.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The token key
+    /// * `threshold` - Fraction of token lifetime at which to refresh (0.0 to 1.0)
+    ///   - 0.8 = refresh when 80% of lifetime elapsed (recommended)
+    ///   - 0.9 = refresh when 90% of lifetime elapsed
+    ///   - 1.0 = refresh only when expired (same as `get_valid_token`)
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use schlussel::prelude::*;
+    /// use std::sync::Arc;
+    ///
+    /// # let storage = Arc::new(MemoryStorage::new());
+    /// # let config = OAuthConfig {
+    /// #     client_id: "test".to_string(),
+    /// #     authorization_endpoint: "https://test.com/auth".to_string(),
+    /// #     token_endpoint: "https://test.com/token".to_string(),
+    /// #     redirect_uri: "http://localhost".to_string(),
+    /// #     scope: None,
+    /// #     device_authorization_endpoint: None,
+    /// # };
+    /// let client = Arc::new(OAuthClient::new(config, storage));
+    /// let refresher = TokenRefresher::with_file_locking(client, "my-app").unwrap();
+    ///
+    /// // Refresh when 80% of token lifetime has elapsed
+    /// let token = refresher.get_valid_token_with_threshold("github.com:user", 0.8).unwrap();
+    /// ```
+    pub fn get_valid_token_with_threshold(&self, key: &str, threshold: f64) -> Result<Token> {
+        let threshold = threshold.clamp(0.0, 1.0);
+
+        let token = self
+            .client
+            .get_token(key)?
+            .ok_or_else(|| OAuthError::InvalidResponse("Token not found".into()))?;
+
+        // Check if token should be refreshed
+        if self.should_refresh(&token, threshold) {
+            return self.refresh_token_for_key(key);
+        }
+
+        Ok(token)
+    }
+
+    /// Determine if a token should be refreshed based on threshold
+    fn should_refresh(&self, token: &Token, threshold: f64) -> bool {
+        // If already expired, definitely refresh
+        if token.is_expired() {
+            return true;
+        }
+
+        // If we don't have expiration info, can't proactively refresh
+        let (expires_at, expires_in) = match (token.expires_at, token.expires_in) {
+            (Some(at), Some(duration)) => (at, duration),
+            _ => return false, // No expiration info, assume valid
+        };
+
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        // Calculate elapsed time as a fraction of total lifetime
+        let total_lifetime = expires_in as f64;
+        let time_remaining = expires_at.saturating_sub(now) as f64;
+        let time_elapsed = total_lifetime - time_remaining;
+        let fraction_elapsed = time_elapsed / total_lifetime;
+
+        // Refresh if we've exceeded the threshold
+        fraction_elapsed >= threshold
+    }
+
     /// Wait for any in-progress refresh to complete
     pub fn wait_for_refresh(&self, key: &str) {
         loop {
@@ -687,5 +811,157 @@ mod tests {
         // Verify token was saved
         let saved_token = client.get_token("test-key").unwrap();
         assert!(saved_token.is_some());
+    }
+
+    #[test]
+    fn test_get_valid_token_not_expired() {
+        let storage = Arc::new(MemoryStorage::new());
+        let config = OAuthConfig {
+            client_id: "test-client".to_string(),
+            authorization_endpoint: "https://auth.example.com/authorize".to_string(),
+            token_endpoint: "https://auth.example.com/token".to_string(),
+            redirect_uri: "http://localhost:8080/callback".to_string(),
+            scope: None,
+            device_authorization_endpoint: None,
+        };
+
+        let client = Arc::new(OAuthClient::new(config, storage.clone()));
+        let refresher = TokenRefresher::new(client.clone());
+
+        // Save a valid token
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        let token = Token {
+            access_token: "valid_token".to_string(),
+            refresh_token: Some("refresh".to_string()),
+            token_type: "Bearer".to_string(),
+            expires_in: Some(3600),
+            expires_at: Some(now + 3600), // Valid for another hour
+            scope: None,
+        };
+
+        client.save_token("test-key", token.clone()).unwrap();
+
+        // get_valid_token should return the existing token without refreshing
+        let result = refresher.get_valid_token("test-key").unwrap();
+        assert_eq!(result.access_token, "valid_token");
+        assert!(!result.is_expired());
+    }
+
+    #[test]
+    fn test_get_valid_token_with_threshold() {
+        let storage = Arc::new(MemoryStorage::new());
+        let config = OAuthConfig {
+            client_id: "test-client".to_string(),
+            authorization_endpoint: "https://auth.example.com/authorize".to_string(),
+            token_endpoint: "https://auth.example.com/token".to_string(),
+            redirect_uri: "http://localhost:8080/callback".to_string(),
+            scope: None,
+            device_authorization_endpoint: None,
+        };
+
+        let client = Arc::new(OAuthClient::new(config, storage.clone()));
+        let refresher = TokenRefresher::new(client.clone());
+
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        // Create a token that's only 10% through its lifetime (very fresh)
+        let token = Token {
+            access_token: "valid_token".to_string(),
+            refresh_token: Some("refresh".to_string()),
+            token_type: "Bearer".to_string(),
+            expires_in: Some(3600),
+            expires_at: Some(now + 3240), // 90% of lifetime remaining (10% elapsed)
+            scope: None,
+        };
+
+        client.save_token("test-key", token.clone()).unwrap();
+
+        // With threshold 0.8, should NOT refresh (only 10% elapsed << 80%)
+        let result = refresher.get_valid_token_with_threshold("test-key", 0.8);
+        assert!(result.is_ok(), "Failed with error: {:?}", result.err());
+        assert_eq!(result.unwrap().access_token, "valid_token");
+
+        // With threshold 0.5, should NOT refresh (10% elapsed < 50%)
+        let result = refresher.get_valid_token_with_threshold("test-key", 0.5);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().access_token, "valid_token");
+
+        // Test that threshold is properly clamped - threshold > 1.0 → 1.0
+        // Even with threshold 1.0, at 10% elapsed it won't trigger refresh
+        let result = refresher.get_valid_token_with_threshold("test-key", 1.5);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().access_token, "valid_token");
+    }
+
+    #[test]
+    fn test_should_refresh_logic() {
+        let storage = Arc::new(MemoryStorage::new());
+        let config = OAuthConfig {
+            client_id: "test-client".to_string(),
+            authorization_endpoint: "https://auth.example.com/authorize".to_string(),
+            token_endpoint: "https://auth.example.com/token".to_string(),
+            redirect_uri: "http://localhost:8080/callback".to_string(),
+            scope: None,
+            device_authorization_endpoint: None,
+        };
+
+        let client = Arc::new(OAuthClient::new(config, storage.clone()));
+        let refresher = TokenRefresher::new(client.clone());
+
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        // Test expired token - should always refresh
+        let expired_token = Token {
+            access_token: "expired".to_string(),
+            refresh_token: Some("refresh".to_string()),
+            token_type: "Bearer".to_string(),
+            expires_in: Some(3600),
+            expires_at: Some(now - 100), // Expired
+            scope: None,
+        };
+        assert!(refresher.should_refresh(&expired_token, 0.8));
+
+        // Test token at 50% lifetime - should not refresh with 0.8 threshold
+        let halfway_token = Token {
+            access_token: "halfway".to_string(),
+            refresh_token: Some("refresh".to_string()),
+            token_type: "Bearer".to_string(),
+            expires_in: Some(3600),
+            expires_at: Some(now + 1800), // 50% remaining
+            scope: None,
+        };
+        assert!(!refresher.should_refresh(&halfway_token, 0.8));
+
+        // Test token at 90% lifetime - should refresh with 0.8 threshold
+        let nearly_expired_token = Token {
+            access_token: "nearly_expired".to_string(),
+            refresh_token: Some("refresh".to_string()),
+            token_type: "Bearer".to_string(),
+            expires_in: Some(3600),
+            expires_at: Some(now + 360), // 10% remaining, 90% elapsed
+            scope: None,
+        };
+        assert!(refresher.should_refresh(&nearly_expired_token, 0.8));
+
+        // Test token without expiration info - should not refresh
+        let no_expiry_token = Token {
+            access_token: "no_expiry".to_string(),
+            refresh_token: Some("refresh".to_string()),
+            token_type: "Bearer".to_string(),
+            expires_in: None,
+            expires_at: None,
+            scope: None,
+        };
+        assert!(!refresher.should_refresh(&no_expiry_token, 0.8));
     }
 }

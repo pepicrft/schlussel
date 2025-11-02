@@ -6,12 +6,15 @@ A cross-platform OAuth 2.0 library with PKCE support for command-line applicatio
 
 - **OAuth 2.0 Authorization Code Flow** with PKCE (RFC 7636)
 - **Device Code Flow** (RFC 8628) - Perfect for CLI applications and headless environments
+- **Automatic Token Refresh**: Auto-refresh expired tokens with `get_valid_token()`
+- **Proactive Refresh**: Refresh before expiration with configurable thresholds
 - **Automatic Browser Integration**: Opens authorization URL and handles callback
 - **Local Callback Server**: Built-in HTTP server for OAuth redirects
 - **HTTP Token Exchange**: Complete implementation with reqwest
 - **Cross-platform**: Builds for Linux, macOS, and Windows (x86_64 and ARM64)
 - **Pluggable Storage**: Trait-based storage backend (implement `SessionStorage`)
 - **Concurrency Control**: Thread-safe token refresh with automatic locking using `parking_lot`
+- **Cross-Process Locking**: File-based locks for multi-process token refresh coordination
 - **Pure Rust**: Safe, fast, and reliable with Rust's memory safety guarantees
 
 ## OAuth Flows Explained
@@ -243,7 +246,51 @@ let token = client.exchange_code("authorization-code", &result.state).unwrap();
 client.save_token("example.com:user", token).unwrap();
 ```
 
-#### Token Refresh
+#### Automatic Token Refresh (Recommended)
+
+The easiest way to handle token expiration - just get a valid token and let the library handle refresh automatically:
+
+```rust
+use schlussel::prelude::*;
+use std::sync::Arc;
+
+let client = Arc::new(OAuthClient::new(config, storage.clone()));
+let refresher = TokenRefresher::new(client.clone());
+
+// Automatically refreshes if expired - simple!
+let token = refresher.get_valid_token("example.com:user").unwrap();
+
+// Use the token immediately
+println!("Access token: {}", token.access_token);
+```
+
+#### Proactive Refresh (Before Expiration)
+
+Refresh tokens before they expire for better reliability:
+
+```rust
+use schlussel::prelude::*;
+use std::sync::Arc;
+
+let client = Arc::new(OAuthClient::new(config, storage.clone()));
+let refresher = TokenRefresher::new(client.clone());
+
+// Refresh when 80% of token lifetime has elapsed
+// For a 1-hour token, this refreshes after 48 minutes
+let token = refresher.get_valid_token_with_threshold("example.com:user", 0.8).unwrap();
+
+// Token is guaranteed to be fresh and valid
+println!("Access token: {}", token.access_token);
+```
+
+**Recommended thresholds:**
+- `0.8` (80%) - Good balance of freshness and efficiency (recommended)
+- `0.9` (90%) - More conservative, refreshes closer to expiration
+- `0.5` (50%) - Very aggressive, always uses fresh tokens
+
+#### Manual Token Refresh
+
+For advanced use cases where you need direct control:
 
 ```rust
 use schlussel::prelude::*;
@@ -254,7 +301,7 @@ let client = Arc::new(OAuthClient::new(config, storage.clone()));
 // Get existing token
 let mut token = client.get_token("example.com:user").unwrap().unwrap();
 
-// Check if expired and refresh
+// Check if expired and refresh manually
 if token.is_expired() {
     if let Some(refresh_token) = &token.refresh_token {
         token = client.refresh_token(refresh_token).unwrap();
