@@ -8,6 +8,19 @@ description = "Cross-platform OAuth 2.0 with PKCE for CLI applications"
 repository = "https://github.com/tuist/schlussel"
 keywords = ["oauth", "oauth2", "pkce", "cli", "authentication"]
 categories = ["authentication", "api-bindings"]
+exclude = [
+    "target/",
+    ".github/",
+    ".git/",
+    "scripts/",
+    "swift/",
+    "examples/",
+    "*.sh",
+    ".mise.toml",
+    "cliff.toml",
+    "RELEASE.md",
+    "CLAUDE.md",
+]
 
 [lib]
 crate-type = ["lib", "staticlib", "cdylib"]
