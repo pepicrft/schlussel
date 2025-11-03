@@ -1,6 +1,6 @@
 [package]
 name = "schlussel"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 authors = ["Tuist"]
 license = "MIT"
@@ -15,7 +15,7 @@ include = [
     "LICENSE",
     "README.md",
 ]
-# Explicitly exclude large files that might be in working directory during release
+# Explicitly exclude large XCFramework files that are created during release
 exclude = [
     "*.xcframework.zip",
     "*.xcframework",
