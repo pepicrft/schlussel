@@ -20,6 +20,9 @@ exclude = [
     "cliff.toml",
     "RELEASE.md",
     "CLAUDE.md",
+    "Cargo.lock",
+    "docs/",
+    "mise/",
 ]
 
 [lib]
