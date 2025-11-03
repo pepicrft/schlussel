@@ -86,6 +86,25 @@ jobs:
           zip -r Schlussel.xcframework.zip Schlussel.xcframework
           mv Schlussel.xcframework.zip ../..
 
+      - name: Calculate XCFramework checksum
+        id: xcframework-checksum
+        if: env.should-release == 'true'
+        run: |
+          CHECKSUM=$(swift package compute-checksum Schlussel.xcframework.zip)
+          echo "checksum=$CHECKSUM" >> "$GITHUB_OUTPUT"
+          echo "XCFramework checksum: $CHECKSUM"
+
+      - name: Update README with XCFramework version
+        if: env.should-release == 'true'
+        run: |
+          VERSION=${{ steps.next-version.outputs.NEXT_VERSION }}
+          CHECKSUM=${{ steps.xcframework-checksum.outputs.checksum }}
+
+          # Update the Swift Package Manager section in README
+          sed -i.bak "s|https://github.com/tuist/schlussel/releases/download/[^/]*/|https://github.com/tuist/schlussel/releases/download/$VERSION/|g" README.md
+          sed -i.bak "s|checksum: \"[^\"]*\"|checksum: \"$CHECKSUM\"|g" README.md
+          rm README.md.bak
+
       - name: Commit changes
         id: auto-commit-action
         uses: stefanzweifel/git-auto-commit-action@v5
@@ -95,7 +114,7 @@ jobs:
           tagging_message: ${{ steps.next-version.outputs.NEXT_VERSION }}
           skip_dirty_check: true
           commit_message: "[Release] Schlussel ${{ steps.next-version.outputs.NEXT_VERSION }}"
-          file_pattern: "CHANGELOG.md Cargo.toml Cargo.lock"
+          file_pattern: "CHANGELOG.md Cargo.toml Cargo.lock README.md"
 
       - name: Get release notes
         id: release-notes
@@ -103,8 +122,32 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          CHECKSUM=${{ steps.xcframework-checksum.outputs.checksum }}
+          VERSION=${{ steps.next-version.outputs.NEXT_VERSION }}
+
           echo "RELEASE_NOTES<<EOF" >> "$GITHUB_OUTPUT"
-          git cliff --latest >> "$GITHUB_OUTPUT"
+          # Get changelog content, removing "Changelog" header if present
+          git cliff --latest | sed '/^# Changelog$/d' | sed '/^All notable changes/,/Semantic Versioning/d' | sed '1{/^$/d;}' >> "$GITHUB_OUTPUT"
+
+          # Add XCFramework installation instructions
+          echo "" >> "$GITHUB_OUTPUT"
+          echo "## 📦 Installation" >> "$GITHUB_OUTPUT"
+          echo "" >> "$GITHUB_OUTPUT"
+          echo "### Swift Package Manager" >> "$GITHUB_OUTPUT"
+          echo "" >> "$GITHUB_OUTPUT"
+          echo "\`\`\`swift" >> "$GITHUB_OUTPUT"
+          echo ".binaryTarget(" >> "$GITHUB_OUTPUT"
+          echo "    name: \"Schlussel\"," >> "$GITHUB_OUTPUT"
+          echo "    url: \"https://github.com/tuist/schlussel/releases/download/$VERSION/Schlussel.xcframework.zip\"," >> "$GITHUB_OUTPUT"
+          echo "    checksum: \"$CHECKSUM\"" >> "$GITHUB_OUTPUT"
+          echo ")" >> "$GITHUB_OUTPUT"
+          echo "\`\`\`" >> "$GITHUB_OUTPUT"
+          echo "" >> "$GITHUB_OUTPUT"
+          echo "### Cargo" >> "$GITHUB_OUTPUT"
+          echo "" >> "$GITHUB_OUTPUT"
+          echo "\`\`\`bash" >> "$GITHUB_OUTPUT"
+          echo "cargo add schlussel" >> "$GITHUB_OUTPUT"
+          echo "\`\`\`" >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release

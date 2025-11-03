@@ -33,9 +33,19 @@ OAuth authentication made simple for command-line tools. No more copying tokens 
 
 ### Installation
 
+**Rust:**
 ```toml
 [dependencies]
-schlussel = { git = "https://github.com/tuist/schlussel" }
+schlussel = "0.1"
+```
+
+**Swift Package Manager:**
+```swift
+.binaryTarget(
+    name: "Schlussel",
+    url: "https://github.com/tuist/schlussel/releases/download/0.1.1/Schlussel.xcframework.zip",
+    checksum: "CHECKSUM_WILL_BE_UPDATED_ON_RELEASE"
+)
 ```
 
 ### Authenticate with GitHub (3 lines!)
