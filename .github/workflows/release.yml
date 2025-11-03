@@ -126,8 +126,12 @@ jobs:
           VERSION=${{ steps.next-version.outputs.NEXT_VERSION }}
 
           echo "RELEASE_NOTES<<EOF" >> "$GITHUB_OUTPUT"
-          # Get changelog content, removing "Changelog" header if present
-          git cliff --latest | sed '/^# Changelog$/d' | sed '/^All notable changes/,/Semantic Versioning/d' | sed '1{/^$/d;}' >> "$GITHUB_OUTPUT"
+          # Get changelog content, remove headers and version title (GitHub release already shows version)
+          git cliff --latest | \
+            sed '/^# Changelog$/d' | \
+            sed '/^All notable changes/,/Semantic Versioning/d' | \
+            sed '/^## \[.*\] - [0-9-]*$/d' | \
+            sed '1{/^$/d;}' >> "$GITHUB_OUTPUT"
 
           # Add XCFramework installation instructions
           echo "" >> "$GITHUB_OUTPUT"
