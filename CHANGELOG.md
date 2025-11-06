@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2025-11-06
+### Details
+#### Feat
+- Add Windows support and module map to artifact bundle by @pepicrft
+
 ## [0.2.3] - 2025-11-06
 ### Details
 #### Docs
@@ -57,6 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### Feat
 - Add automated release system with git-cliff by @pepicrft in [#9](https://github.com/tuist/schlussel/pull/9)
 
+[0.3.0]: https://github.com/tuist/schlussel/compare/0.2.3..0.3.0
 [0.2.3]: https://github.com/tuist/schlussel/compare/0.2.2..0.2.3
 [0.2.2]: https://github.com/tuist/schlussel/compare/0.2.1..0.2.2
 [0.2.1]: https://github.com/tuist/schlussel/compare/0.2.0..0.2.1
