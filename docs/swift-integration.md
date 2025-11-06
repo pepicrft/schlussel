@@ -28,8 +28,8 @@ Or use the artifact bundle directly:
 
 **Supports:**
 - ✅ macOS (x86_64, ARM64)
-- ✅ Linux (x86_64, ARM64) 
-- ⚠️ Windows (planned)
+- ✅ Linux (x86_64, ARM64)
+- ✅ Windows (x86_64)
 
 ### Option 2: XCFramework (Apple Platforms Only)
 
@@ -115,11 +115,17 @@ The artifact bundle includes pre-compiled static libraries for multiple platform
 - ✅ macOS (x86_64 + ARM64 universal)
 - ✅ Linux x86_64
 - ✅ Linux ARM64
+- ✅ Windows x86_64
+
+**Features:**
+- C headers with module map for easy Swift integration
+- Pre-compiled static libraries for all platforms
+- Single artifact bundle for cross-platform deployment
 
 **Tested on:**
 - macOS 13+ with Swift 5.9+
 - Ubuntu 22.04+ with Swift 5.9+
-- Debian-based Linux distributions
+- Windows 10+ with Swift 5.9+
 
 ### XCFramework (Apple Only)
 
@@ -144,7 +150,7 @@ Download from [releases](https://github.com/tuist/schlussel/releases/latest) or 
 |----------|----------------|-------------|
 | macOS | ✅ | ✅ |
 | Linux | ✅ | ❌ |
-| Windows | 🔜 | ❌ |
+| Windows | ✅ | ❌ |
 | iOS | ❌ | ✅ |
 | iOS Simulator | ❌ | ✅ |
 

@@ -100,6 +100,27 @@ if [ -n "$CONTAINER_CMD" ]; then
         cp target/release/libschlussel.a "${VERSION_DIR}/lib/libschlussel-linux-aarch64.a"
         echo "   ✅ Linux ARM64 binary created"
     fi
+
+    # Windows x86_64 (cross-compile using mingw)
+    echo ""
+    echo "🪟 Building for Windows x86_64..."
+    $CONTAINER_CMD run --rm \
+        -v "$(pwd)":/workspace \
+        -w /workspace \
+        rust:latest \
+        bash -c "rustup target add x86_64-pc-windows-gnu && apt-get update -qq && apt-get install -y -qq mingw-w64 pkg-config libssl-dev > /dev/null 2>&1 && cargo build --release --target x86_64-pc-windows-gnu 2>&1" || {
+            echo "   ⚠️  Windows x86_64 build failed"
+        }
+
+    if [ -f target/x86_64-pc-windows-gnu/release/schlussel.lib ] || [ -f target/x86_64-pc-windows-gnu/release/libschlussel.a ]; then
+        # Copy .a file and rename to .lib for Windows
+        if [ -f target/x86_64-pc-windows-gnu/release/libschlussel.a ]; then
+            cp target/x86_64-pc-windows-gnu/release/libschlussel.a "${VERSION_DIR}/lib/schlussel-windows-x86_64.lib"
+        else
+            cp target/x86_64-pc-windows-gnu/release/schlussel.lib "${VERSION_DIR}/lib/schlussel-windows-x86_64.lib"
+        fi
+        echo "   ✅ Windows x86_64 binary created"
+    fi
 fi
 
 # Create info.json dynamically based on which binaries exist
@@ -115,7 +136,8 @@ if [ -f "${VERSION_DIR}/lib/libschlussel-macos.a" ]; then
           \"path\": \"schlussel-${VERSION}/lib/libschlussel-macos.a\",
           \"supportedTriples\": [\"x86_64-apple-macosx\", \"arm64-apple-macosx\"],
           \"staticLibraryMetadata\": {
-            \"headerPaths\": [\"schlussel-${VERSION}/include\"]
+            \"headerPaths\": [\"schlussel-${VERSION}/include\"],
+            \"moduleMapPath\": \"schlussel-${VERSION}/include/module.modulemap\"
           }
         }"
     FIRST=false
@@ -128,7 +150,8 @@ if [ -f "${VERSION_DIR}/lib/libschlussel-linux-x86_64.a" ]; then
           \"path\": \"schlussel-${VERSION}/lib/libschlussel-linux-x86_64.a\",
           \"supportedTriples\": [\"x86_64-unknown-linux-gnu\"],
           \"staticLibraryMetadata\": {
-            \"headerPaths\": [\"schlussel-${VERSION}/include\"]
+            \"headerPaths\": [\"schlussel-${VERSION}/include\"],
+            \"moduleMapPath\": \"schlussel-${VERSION}/include/module.modulemap\"
           }
         }"
     FIRST=false
@@ -141,7 +164,22 @@ if [ -f "${VERSION_DIR}/lib/libschlussel-linux-aarch64.a" ]; then
           \"path\": \"schlussel-${VERSION}/lib/libschlussel-linux-aarch64.a\",
           \"supportedTriples\": [\"aarch64-unknown-linux-gnu\"],
           \"staticLibraryMetadata\": {
-            \"headerPaths\": [\"schlussel-${VERSION}/include\"]
+            \"headerPaths\": [\"schlussel-${VERSION}/include\"],
+            \"moduleMapPath\": \"schlussel-${VERSION}/include/module.modulemap\"
+          }
+        }"
+    FIRST=false
+fi
+
+if [ -f "${VERSION_DIR}/lib/schlussel-windows-x86_64.lib" ]; then
+    [ "$FIRST" = false ] && VARIANTS="${VARIANTS},"
+    VARIANTS="${VARIANTS}
+        {
+          \"path\": \"schlussel-${VERSION}/lib/schlussel-windows-x86_64.lib\",
+          \"supportedTriples\": [\"x86_64-unknown-windows-msvc\"],
+          \"staticLibraryMetadata\": {
+            \"headerPaths\": [\"schlussel-${VERSION}/include\"],
+            \"moduleMapPath\": \"schlussel-${VERSION}/include/module.modulemap\"
           }
         }"
     FIRST=false
