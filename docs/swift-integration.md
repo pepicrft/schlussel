@@ -1,10 +1,37 @@
-# 📱 Swift/iOS Integration
+# 📱 Swift Integration
 
-Using Schlussel from Swift via XCFramework.
+Using Schlussel from Swift via XCFramework (Apple platforms) or Artifact Bundle (cross-platform).
 
 ---
 
 ## 🚀 Quick Start
+
+### Option 1: Swift Package Manager (Recommended - Cross-Platform)
+
+Add to your `Package.swift`:
+
+```swift
+dependencies: [
+    .package(url: "https://github.com/tuist/schlussel", from: "0.2.2")
+]
+```
+
+Or use the artifact bundle directly:
+
+```swift
+.binaryTarget(
+    name: "Schlussel",
+    url: "https://github.com/tuist/schlussel/releases/download/0.2.2/Schlussel.artifactbundle.zip",
+    checksum: "f85b56fe4daabce63b811bfc50c99f12ae87cb6df7cb57e784eb097c38839780"
+)
+```
+
+**Supports:**
+- ✅ macOS (x86_64, ARM64)
+- ✅ Linux (x86_64, ARM64) 
+- ⚠️ Windows (planned)
+
+### Option 2: XCFramework (Apple Platforms Only)
 
 ### 1. Build XCFramework
 
@@ -68,34 +95,58 @@ if let accessToken = token.accessToken {
 
 ---
 
-## 📦 Distribution
+## 📦 Distribution Options
 
-### Option 1: Include XCFramework Directly
+### Artifact Bundle (Cross-Platform)
 
-Bundle `Schlussel.xcframework` with your app.
+**Best for:** CLI tools, server-side Swift, cross-platform apps
 
-### Option 2: Swift Package Manager (Future)
-
-Once published, add to `Package.swift`:
+The artifact bundle includes pre-compiled static libraries for multiple platforms:
 
 ```swift
-dependencies: [
-    .package(url: "https://github.com/tuist/schlussel", from: "0.1.0")
-]
+.binaryTarget(
+    name: "Schlussel",
+    url: "https://github.com/tuist/schlussel/releases/download/0.2.2/Schlussel.artifactbundle.zip",
+    checksum: "f85b56fe4daabce63b811bfc50c99f12ae87cb6df7cb57e784eb097c38839780"
+)
 ```
+
+**Platforms:**
+- ✅ macOS (x86_64 + ARM64 universal)
+- ✅ Linux x86_64
+- ✅ Linux ARM64
+
+**Tested on:**
+- macOS 13+ with Swift 5.9+
+- Ubuntu 22.04+ with Swift 5.9+
+- Debian-based Linux distributions
+
+### XCFramework (Apple Only)
+
+**Best for:** iOS apps, macOS apps with iOS target
+
+Download from [releases](https://github.com/tuist/schlussel/releases/latest) or build locally:
+
+```bash
+./scripts/build-xcframework.sh
+```
+
+**Platforms:**
+- ✅ iOS devices (ARM64)
+- ✅ iOS Simulator (x86_64 + ARM64)
+- ✅ macOS (x86_64 + ARM64)
 
 ---
 
-## 🛠️ Platform Support
+## 🛠️ Platform Support Summary
 
-| Platform | Supported | Architecture |
-|----------|-----------|--------------|
-| iOS | ✅ | ARM64 |
-| iOS Simulator | ✅ | x86_64, ARM64 |
-| macOS | ✅ | x86_64, ARM64 |
-| macCatalyst | 🔜 | Coming soon |
-| tvOS | 🔜 | Coming soon |
-| watchOS | 🔜 | Coming soon |
+| Platform | Artifact Bundle | XCFramework |
+|----------|----------------|-------------|
+| macOS | ✅ | ✅ |
+| Linux | ✅ | ❌ |
+| Windows | 🔜 | ❌ |
+| iOS | ❌ | ✅ |
+| iOS Simulator | ❌ | ✅ |
 
 ---
 
