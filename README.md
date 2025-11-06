@@ -43,8 +43,8 @@ schlussel = "0.1"
 ```swift
 .binaryTarget(
     name: "Schlussel",
-    url: "https://github.com/tuist/schlussel/releases/download/0.2.2/Schlussel.xcframework.zip",
-    checksum: "645b38d84ff104e400b864afb631bf6b6f9045d1960782eef46c4dc681139b04"
+    url: "https://github.com/tuist/schlussel/releases/download/0.2.3/Schlussel.xcframework.zip",
+    checksum: "f52176394826a6dee17d053e6a879556628a8ea94e27a2cc5b3c31c0d93ab264"
 )
 ```
 
