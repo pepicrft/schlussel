@@ -311,12 +311,16 @@ impl<S: SessionStorage> OAuthClient<S> {
             url.push_str(&format!("&scope={}", urlencoding::encode(scope)));
         }
 
-        // Open browser
+        // Open browser (unless disabled via env var)
         println!("\n=== Authorization Required ===");
-        println!("Opening browser for authorization...");
+        if std::env::var("SCHLUSSEL_NO_BROWSER").is_err() {
+            println!("Opening browser for authorization...");
+        }
         println!("If the browser doesn't open, visit: {}", url);
 
-        let _ = webbrowser::open(&url);
+        if std::env::var("SCHLUSSEL_NO_BROWSER").is_err() {
+            let _ = webbrowser::open(&url);
+        }
 
         // Wait for callback (30 second timeout)
         println!("Waiting for authorization...");
@@ -400,11 +404,13 @@ impl<S: SessionStorage> OAuthClient<S> {
 
         println!("\nWaiting for authorization...");
 
-        // Try to open browser automatically
-        if let Some(complete_uri) = &device_auth.verification_uri_complete {
-            let _ = webbrowser::open(complete_uri);
-        } else {
-            let _ = webbrowser::open(&device_auth.verification_uri);
+        // Try to open browser automatically (unless disabled via env var)
+        if std::env::var("SCHLUSSEL_NO_BROWSER").is_err() {
+            if let Some(complete_uri) = &device_auth.verification_uri_complete {
+                let _ = webbrowser::open(complete_uri);
+            } else {
+                let _ = webbrowser::open(&device_auth.verification_uri);
+            }
         }
 
         // Step 3: Poll for token
