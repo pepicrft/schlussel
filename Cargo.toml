@@ -40,7 +40,7 @@ fs2 = "0.4"
 keyring = "3.6"
 
 [dev-dependencies]
-criterion = "0.5"
+criterion = "0.8"
 
 [profile.release]
 opt-level = 3
