@@ -131,7 +131,7 @@ jobs:
 
       - name: Commit changes
         id: auto-commit-action
-        uses: stefanzweifel/git-auto-commit-action@v5
+        uses: stefanzweifel/git-auto-commit-action@v7
         if: env.should-release == 'true'
         with:
           commit_options: "--allow-empty"
