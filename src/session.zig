@@ -89,15 +89,31 @@ pub const Token = struct {
 
     /// Clone this token
     pub fn clone(self: *const Token, allocator: Allocator) !Token {
+        // Allocate each field with proper errdefer cleanup on failure
+        const access_token = try allocator.dupe(u8, self.access_token);
+        errdefer allocator.free(access_token);
+
+        const token_type = try allocator.dupe(u8, self.token_type);
+        errdefer allocator.free(token_type);
+
+        const refresh_token = if (self.refresh_token) |rt| try allocator.dupe(u8, rt) else null;
+        errdefer if (refresh_token) |rt| allocator.free(rt);
+
+        const scope = if (self.scope) |s| try allocator.dupe(u8, s) else null;
+        errdefer if (scope) |s| allocator.free(s);
+
+        const id_token = if (self.id_token) |id| try allocator.dupe(u8, id) else null;
+        // No errdefer for last allocation - success path
+
         return .{
             .allocator = allocator,
-            .access_token = try allocator.dupe(u8, self.access_token),
-            .token_type = try allocator.dupe(u8, self.token_type),
-            .refresh_token = if (self.refresh_token) |rt| try allocator.dupe(u8, rt) else null,
+            .access_token = access_token,
+            .token_type = token_type,
+            .refresh_token = refresh_token,
             .expires_in = self.expires_in,
             .expires_at = self.expires_at,
-            .scope = if (self.scope) |s| try allocator.dupe(u8, s) else null,
-            .id_token = if (self.id_token) |id| try allocator.dupe(u8, id) else null,
+            .scope = scope,
+            .id_token = id_token,
         };
     }
 
@@ -141,14 +157,14 @@ pub const Token = struct {
         errdefer buf.deinit(allocator);
 
         try buf.appendSlice(allocator, "{\"access_token\":\"");
-        try buf.appendSlice(allocator, self.access_token);
+        try appendJsonEscaped(allocator, &buf, self.access_token);
         try buf.appendSlice(allocator, "\",\"token_type\":\"");
-        try buf.appendSlice(allocator, self.token_type);
+        try appendJsonEscaped(allocator, &buf, self.token_type);
         try buf.append(allocator, '"');
 
         if (self.refresh_token) |rt| {
             try buf.appendSlice(allocator, ",\"refresh_token\":\"");
-            try buf.appendSlice(allocator, rt);
+            try appendJsonEscaped(allocator, &buf, rt);
             try buf.append(allocator, '"');
         }
 
@@ -164,13 +180,13 @@ pub const Token = struct {
 
         if (self.scope) |s| {
             try buf.appendSlice(allocator, ",\"scope\":\"");
-            try buf.appendSlice(allocator, s);
+            try appendJsonEscaped(allocator, &buf, s);
             try buf.append(allocator, '"');
         }
 
         if (self.id_token) |id| {
             try buf.appendSlice(allocator, ",\"id_token\":\"");
-            try buf.appendSlice(allocator, id);
+            try appendJsonEscaped(allocator, &buf, id);
             try buf.append(allocator, '"');
         }
 
@@ -188,44 +204,56 @@ pub const Token = struct {
 
     /// Deserialize token from parsed JSON value
     pub fn fromJsonValue(allocator: Allocator, value: json.Value) !Token {
+        // Validate that value is an object
+        if (value != .object) return error.InvalidParameter;
         const obj = value.object;
 
-        const access_token = obj.get("access_token") orelse return error.InvalidParameter;
-        const token_type = obj.get("token_type") orelse return error.InvalidParameter;
+        const access_token_val = obj.get("access_token") orelse return error.InvalidParameter;
+        const token_type_val = obj.get("token_type") orelse return error.InvalidParameter;
+
+        // Validate types
+        if (access_token_val != .string) return error.InvalidParameter;
+        if (token_type_val != .string) return error.InvalidParameter;
 
         var token = try Token.init(
             allocator,
-            access_token.string,
-            token_type.string,
+            access_token_val.string,
+            token_type_val.string,
         );
         errdefer token.deinit();
 
         if (obj.get("refresh_token")) |rt| {
-            if (rt != .null) {
+            if (rt == .string) {
                 token.refresh_token = try allocator.dupe(u8, rt.string);
             }
         }
 
         if (obj.get("expires_in")) |exp| {
-            if (exp != .null) {
-                token.expires_in = @intCast(exp.integer);
+            if (exp == .integer) {
+                // Validate non-negative
+                if (exp.integer >= 0) {
+                    token.expires_in = @intCast(exp.integer);
+                }
             }
         }
 
         if (obj.get("expires_at")) |exp| {
-            if (exp != .null) {
-                token.expires_at = @intCast(exp.integer);
+            if (exp == .integer) {
+                // Validate non-negative
+                if (exp.integer >= 0) {
+                    token.expires_at = @intCast(exp.integer);
+                }
             }
         }
 
         if (obj.get("scope")) |s| {
-            if (s != .null) {
+            if (s == .string) {
                 token.scope = try allocator.dupe(u8, s.string);
             }
         }
 
         if (obj.get("id_token")) |id| {
-            if (id != .null) {
+            if (id == .string) {
                 token.id_token = try allocator.dupe(u8, id.string);
             }
         }
@@ -420,16 +448,54 @@ pub const FileStorage = struct {
     }
 
     fn getFilePath(self: *FileStorage, key: []const u8) ![]const u8 {
+        // Validate key to prevent path traversal attacks
+        try validateStorageKey(key);
         return std.fmt.allocPrint(self.allocator, "{s}/{s}.json", .{ self.base_path, key });
+    }
+
+    /// Validate that a storage key is safe (no path traversal or special characters)
+    fn validateStorageKey(key: []const u8) !void {
+        if (key.len == 0) return error.InvalidParameter;
+        if (key.len > 255) return error.InvalidParameter; // Reasonable max length
+
+        for (key) |c| {
+            switch (c) {
+                // Allow alphanumeric, underscore, hyphen, dot (but not leading dot)
+                'a'...'z', 'A'...'Z', '0'...'9', '_', '-' => {},
+                '.' => {
+                    // Disallow if it could be path traversal
+                    if (key.len >= 2 and std.mem.startsWith(u8, key, "..")) {
+                        return error.InvalidParameter;
+                    }
+                },
+                // Disallow path separators and other dangerous characters
+                '/', '\\', 0, '\n', '\r' => return error.InvalidParameter,
+                else => {},
+            }
+        }
+
+        // Additional check: disallow keys that start with dot (hidden files)
+        if (key[0] == '.') return error.InvalidParameter;
     }
 
     fn save(ptr: *anyopaque, key: []const u8, token: Token) !void {
         const self: *FileStorage = @ptrCast(@alignCast(ptr));
 
-        // Ensure directory exists
+        // Ensure directory exists with restricted permissions (owner only)
         fs.cwd().makePath(self.base_path) catch |err| {
             if (err != error.PathAlreadyExists) return err;
         };
+
+        // Try to set directory permissions to owner-only (0700)
+        // This is best-effort - may fail on some filesystems
+        if (@import("builtin").os.tag != .windows) {
+            const dir = fs.cwd().openDir(self.base_path, .{}) catch null;
+            if (dir) |d| {
+                var md = d;
+                md.chmod(0o700) catch {};
+                md.close();
+            }
+        }
 
         const file_path = try self.getFilePath(key);
         defer self.allocator.free(file_path);
@@ -437,7 +503,8 @@ pub const FileStorage = struct {
         const json_data = try token.toJson(self.allocator);
         defer self.allocator.free(json_data);
 
-        const file = try fs.cwd().createFile(file_path, .{});
+        // Create file with restricted permissions (owner read/write only - 0600)
+        const file = try fs.cwd().createFile(file_path, .{ .mode = 0o600 });
         defer file.close();
 
         try file.writeAll(json_data);
@@ -610,6 +677,10 @@ pub const SecureStorage = struct {
     }
 
     fn macosStoreKeychain(allocator: Allocator, service: []const u8, account: []const u8, data: []const u8) !void {
+        // Validate inputs to prevent command injection
+        try validateCommandArgument(service);
+        try validateCommandArgument(account);
+
         // Use security command-line tool
         const args = [_][]const u8{
             "security",
@@ -630,6 +701,10 @@ pub const SecureStorage = struct {
     }
 
     fn macosLoadKeychain(allocator: Allocator, service: []const u8, account: []const u8) ![]const u8 {
+        // Validate inputs to prevent command injection
+        try validateCommandArgument(service);
+        try validateCommandArgument(account);
+
         const args = [_][]const u8{
             "security",
             "find-generic-password",
@@ -667,6 +742,10 @@ pub const SecureStorage = struct {
     }
 
     fn macosDeleteKeychain(allocator: Allocator, service: []const u8, account: []const u8) !void {
+        // Validate inputs to prevent command injection
+        try validateCommandArgument(service);
+        try validateCommandArgument(account);
+
         const args = [_][]const u8{
             "security",
             "delete-generic-password",
@@ -683,6 +762,10 @@ pub const SecureStorage = struct {
     }
 
     fn linuxStoreSecret(allocator: Allocator, service: []const u8, account: []const u8, data: []const u8) !void {
+        // Validate inputs to prevent command injection
+        try validateCommandArgument(service);
+        try validateCommandArgument(account);
+
         // Use secret-tool from libsecret
         const args = [_][]const u8{
             "secret-tool",
@@ -712,6 +795,10 @@ pub const SecureStorage = struct {
     }
 
     fn linuxLoadSecret(allocator: Allocator, service: []const u8, account: []const u8) ![]const u8 {
+        // Validate inputs to prevent command injection
+        try validateCommandArgument(service);
+        try validateCommandArgument(account);
+
         const args = [_][]const u8{
             "secret-tool",
             "lookup",
@@ -740,6 +827,10 @@ pub const SecureStorage = struct {
     }
 
     fn linuxDeleteSecret(allocator: Allocator, service: []const u8, account: []const u8) !void {
+        // Validate inputs to prevent command injection
+        try validateCommandArgument(service);
+        try validateCommandArgument(account);
+
         const args = [_][]const u8{
             "secret-tool",
             "clear",
@@ -755,17 +846,41 @@ pub const SecureStorage = struct {
         _ = try child.spawnAndWait();
     }
 
+    fn getFallbackPath(allocator: Allocator, service: []const u8, account: []const u8) ![]const u8 {
+        // Use XDG_RUNTIME_DIR if available (per-user, tmpfs, secure permissions)
+        // Otherwise use user-specific directory under XDG_DATA_HOME or HOME
+        if (std.posix.getenv("XDG_RUNTIME_DIR")) |runtime_dir| {
+            return std.fmt.allocPrint(allocator, "{s}/schlussel-{s}-{s}", .{ runtime_dir, service, account });
+        }
+        if (std.posix.getenv("XDG_DATA_HOME")) |data_home| {
+            return std.fmt.allocPrint(allocator, "{s}/schlussel/.{s}-{s}", .{ data_home, service, account });
+        }
+        if (std.posix.getenv("HOME")) |home| {
+            return std.fmt.allocPrint(allocator, "{s}/.local/share/schlussel/.{s}-{s}", .{ home, service, account });
+        }
+        // Last resort: use a predictable but user-specific location
+        return std.fmt.allocPrint(allocator, "/tmp/.schlussel-{d}-{s}-{s}", .{ std.posix.getuid(), service, account });
+    }
+
     fn fallbackStore(allocator: Allocator, service: []const u8, account: []const u8, data: []const u8) !void {
-        const path = try std.fmt.allocPrint(allocator, "/tmp/.{s}-{s}", .{ service, account });
+        const path = try getFallbackPath(allocator, service, account);
         defer allocator.free(path);
 
+        // Ensure parent directory exists
+        if (std.fs.path.dirname(path)) |dir| {
+            fs.cwd().makePath(dir) catch |err| {
+                if (err != error.PathAlreadyExists) return err;
+            };
+        }
+
+        // Create file with restrictive permissions (owner read/write only)
         const file = try fs.cwd().createFile(path, .{ .mode = 0o600 });
         defer file.close();
         try file.writeAll(data);
     }
 
     fn fallbackLoad(allocator: Allocator, service: []const u8, account: []const u8) ![]const u8 {
-        const path = try std.fmt.allocPrint(allocator, "/tmp/.{s}-{s}", .{ service, account });
+        const path = try getFallbackPath(allocator, service, account);
         defer allocator.free(path);
 
         const file = fs.cwd().openFile(path, .{}) catch return error.NotFound;
@@ -774,7 +889,7 @@ pub const SecureStorage = struct {
     }
 
     fn fallbackDelete(allocator: Allocator, service: []const u8, account: []const u8) !void {
-        const path = try std.fmt.allocPrint(allocator, "/tmp/.{s}-{s}", .{ service, account });
+        const path = try getFallbackPath(allocator, service, account);
         defer allocator.free(path);
 
         fs.cwd().deleteFile(path) catch |err| {
@@ -782,6 +897,45 @@ pub const SecureStorage = struct {
         };
     }
 };
+
+/// Escape a string for JSON output
+fn appendJsonEscaped(allocator: Allocator, buf: *std.ArrayListUnmanaged(u8), input: []const u8) !void {
+    for (input) |c| {
+        switch (c) {
+            '"' => try buf.appendSlice(allocator, "\\\""),
+            '\\' => try buf.appendSlice(allocator, "\\\\"),
+            '\n' => try buf.appendSlice(allocator, "\\n"),
+            '\r' => try buf.appendSlice(allocator, "\\r"),
+            '\t' => try buf.appendSlice(allocator, "\\t"),
+            // Other control characters (excluding \n, \r, \t which are handled above)
+            0x00...0x08, 0x0B, 0x0C, 0x0E...0x1F => {
+                // Control characters - escape as \uXXXX
+                try buf.appendSlice(allocator, "\\u00");
+                const hex = "0123456789abcdef";
+                try buf.append(allocator, hex[c >> 4]);
+                try buf.append(allocator, hex[c & 0x0F]);
+            },
+            else => try buf.append(allocator, c),
+        }
+    }
+}
+
+/// Validate that a string is safe for use as a command argument
+/// Returns error if the string contains potentially dangerous characters
+fn validateCommandArgument(arg: []const u8) !void {
+    if (arg.len == 0) return error.InvalidParameter;
+
+    // Reject arguments that look like flags (start with -)
+    if (arg[0] == '-') return error.InvalidParameter;
+
+    for (arg) |c| {
+        switch (c) {
+            // Reject null bytes, newlines, and shell metacharacters
+            0, '\n', '\r', '`', '$', '|', '&', ';', '>', '<' => return error.InvalidParameter,
+            else => {},
+        }
+    }
+}
 
 test "Token creation and expiration" {
     const allocator = std.testing.allocator;

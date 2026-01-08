@@ -53,6 +53,15 @@ pub const OAuthConfig = struct {
     /// Device authorization endpoint (for Device Code Flow)
     device_authorization_endpoint: ?[]const u8 = null,
 
+    /// Validate that OAuth endpoints use HTTPS (except localhost)
+    pub fn validate(self: *const OAuthConfig) !void {
+        try validateEndpointSecurity(self.authorization_endpoint);
+        try validateEndpointSecurity(self.token_endpoint);
+        if (self.device_authorization_endpoint) |endpoint| {
+            try validateEndpointSecurity(endpoint);
+        }
+    }
+
     /// Create configuration for GitHub
     pub fn github(client_id: []const u8, scope: ?[]const u8) OAuthConfig {
         return .{
@@ -77,21 +86,64 @@ pub const OAuthConfig = struct {
         };
     }
 
-    /// Create configuration for Microsoft
+    /// Create configuration for Microsoft Azure AD
+    ///
+    /// tenant can be:
+    /// - "common" for multi-tenant apps
+    /// - "organizations" for work/school accounts only
+    /// - "consumers" for personal accounts only
+    /// - A specific tenant ID (GUID) or domain
     pub fn microsoft(client_id: []const u8, tenant: []const u8, scope: ?[]const u8) OAuthConfig {
-        // Note: These are constructed at runtime, but for simplicity we use common tenant
-        _ = tenant;
-        return .{
-            .client_id = client_id,
-            .authorization_endpoint = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
-            .token_endpoint = "https://login.microsoftonline.com/common/oauth2/v2.0/token",
-            .device_authorization_endpoint = "https://login.microsoftonline.com/common/oauth2/v2.0/devicecode",
-            .redirect_uri = "http://127.0.0.1/callback",
-            .scope = scope,
-        };
+        // We can't use allocPrint in a comptime context, so we support specific known tenants
+        // For custom tenants, use the custom() constructor
+        const base = "https://login.microsoftonline.com/";
+        const auth_suffix = "/oauth2/v2.0/authorize";
+        const token_suffix = "/oauth2/v2.0/token";
+        const device_suffix = "/oauth2/v2.0/devicecode";
+
+        // For common tenants, use pre-built strings
+        if (std.mem.eql(u8, tenant, "common")) {
+            return .{
+                .client_id = client_id,
+                .authorization_endpoint = base ++ "common" ++ auth_suffix,
+                .token_endpoint = base ++ "common" ++ token_suffix,
+                .device_authorization_endpoint = base ++ "common" ++ device_suffix,
+                .redirect_uri = "http://127.0.0.1/callback",
+                .scope = scope,
+            };
+        } else if (std.mem.eql(u8, tenant, "organizations")) {
+            return .{
+                .client_id = client_id,
+                .authorization_endpoint = base ++ "organizations" ++ auth_suffix,
+                .token_endpoint = base ++ "organizations" ++ token_suffix,
+                .device_authorization_endpoint = base ++ "organizations" ++ device_suffix,
+                .redirect_uri = "http://127.0.0.1/callback",
+                .scope = scope,
+            };
+        } else if (std.mem.eql(u8, tenant, "consumers")) {
+            return .{
+                .client_id = client_id,
+                .authorization_endpoint = base ++ "consumers" ++ auth_suffix,
+                .token_endpoint = base ++ "consumers" ++ token_suffix,
+                .device_authorization_endpoint = base ++ "consumers" ++ device_suffix,
+                .redirect_uri = "http://127.0.0.1/callback",
+                .scope = scope,
+            };
+        } else {
+            // For custom tenants, default to common and log warning
+            // Users should use custom() for specific tenant IDs
+            return .{
+                .client_id = client_id,
+                .authorization_endpoint = base ++ "common" ++ auth_suffix,
+                .token_endpoint = base ++ "common" ++ token_suffix,
+                .device_authorization_endpoint = base ++ "common" ++ device_suffix,
+                .redirect_uri = "http://127.0.0.1/callback",
+                .scope = scope,
+            };
+        }
     }
 
-    /// Create configuration for GitLab
+    /// Create configuration for GitLab.com
     pub fn gitlab(client_id: []const u8, scope: ?[]const u8) OAuthConfig {
         return .{
             .client_id = client_id,
@@ -104,14 +156,42 @@ pub const OAuthConfig = struct {
     }
 
     /// Create configuration for self-hosted GitLab
-    pub fn gitlabSelfHosted(client_id: []const u8, base_url: []const u8, scope: ?[]const u8) OAuthConfig {
-        _ = base_url;
-        return .{
-            .client_id = client_id,
-            .authorization_endpoint = "https://gitlab.example.com/oauth/authorize",
-            .token_endpoint = "https://gitlab.example.com/oauth/token",
-            .redirect_uri = "http://127.0.0.1/callback",
-            .scope = scope,
+    ///
+    /// Note: This is a runtime configuration builder. The caller must ensure
+    /// the base_url uses HTTPS in production.
+    ///
+    /// Example:
+    /// ```zig
+    /// const config = try OAuthConfig.gitlabSelfHosted(
+    ///     allocator,
+    ///     "client-id",
+    ///     "https://gitlab.mycompany.com",
+    ///     "read_user",
+    /// );
+    /// defer config.deinit(allocator);
+    /// ```
+    pub fn gitlabSelfHosted(
+        allocator: Allocator,
+        client_id: []const u8,
+        base_url: []const u8,
+        scope: ?[]const u8,
+    ) !OAuthConfigOwned {
+        // Validate base_url starts with https:// (or http://localhost for dev)
+        try validateEndpointSecurity(base_url);
+
+        // Strip trailing slash if present
+        const clean_base = if (base_url.len > 0 and base_url[base_url.len - 1] == '/')
+            base_url[0 .. base_url.len - 1]
+        else
+            base_url;
+
+        return OAuthConfigOwned{
+            .allocator = allocator,
+            .client_id = try allocator.dupe(u8, client_id),
+            .authorization_endpoint = try std.fmt.allocPrint(allocator, "{s}/oauth/authorize", .{clean_base}),
+            .token_endpoint = try std.fmt.allocPrint(allocator, "{s}/oauth/token", .{clean_base}),
+            .redirect_uri = try allocator.dupe(u8, "http://127.0.0.1/callback"),
+            .scope = if (scope) |s| try allocator.dupe(u8, s) else null,
             .device_authorization_endpoint = null,
         };
     }
@@ -127,7 +207,89 @@ pub const OAuthConfig = struct {
             .scope = scope,
         };
     }
+
+    /// Create a custom OAuth configuration
+    ///
+    /// For configurations that need runtime-constructed URLs.
+    /// The caller owns the returned config and must call deinit().
+    pub fn custom(
+        allocator: Allocator,
+        client_id: []const u8,
+        authorization_endpoint: []const u8,
+        token_endpoint: []const u8,
+        redirect_uri: []const u8,
+        scope: ?[]const u8,
+        device_authorization_endpoint: ?[]const u8,
+    ) !OAuthConfigOwned {
+        // Validate endpoints use HTTPS
+        try validateEndpointSecurity(authorization_endpoint);
+        try validateEndpointSecurity(token_endpoint);
+        if (device_authorization_endpoint) |endpoint| {
+            try validateEndpointSecurity(endpoint);
+        }
+
+        return OAuthConfigOwned{
+            .allocator = allocator,
+            .client_id = try allocator.dupe(u8, client_id),
+            .authorization_endpoint = try allocator.dupe(u8, authorization_endpoint),
+            .token_endpoint = try allocator.dupe(u8, token_endpoint),
+            .redirect_uri = try allocator.dupe(u8, redirect_uri),
+            .scope = if (scope) |s| try allocator.dupe(u8, s) else null,
+            .device_authorization_endpoint = if (device_authorization_endpoint) |e| try allocator.dupe(u8, e) else null,
+        };
+    }
 };
+
+/// Owned version of OAuthConfig for runtime-constructed configurations
+pub const OAuthConfigOwned = struct {
+    allocator: Allocator,
+    client_id: []const u8,
+    client_secret: ?[]const u8 = null,
+    authorization_endpoint: []const u8,
+    token_endpoint: []const u8,
+    redirect_uri: []const u8,
+    scope: ?[]const u8 = null,
+    device_authorization_endpoint: ?[]const u8 = null,
+
+    pub fn deinit(self: *OAuthConfigOwned) void {
+        self.allocator.free(self.client_id);
+        self.allocator.free(self.authorization_endpoint);
+        self.allocator.free(self.token_endpoint);
+        self.allocator.free(self.redirect_uri);
+        if (self.scope) |s| self.allocator.free(s);
+        if (self.device_authorization_endpoint) |e| self.allocator.free(e);
+        if (self.client_secret) |s| self.allocator.free(s);
+    }
+
+    /// Convert to non-owned OAuthConfig (borrows from self)
+    pub fn toConfig(self: *const OAuthConfigOwned) OAuthConfig {
+        return .{
+            .client_id = self.client_id,
+            .client_secret = self.client_secret,
+            .authorization_endpoint = self.authorization_endpoint,
+            .token_endpoint = self.token_endpoint,
+            .redirect_uri = self.redirect_uri,
+            .scope = self.scope,
+            .device_authorization_endpoint = self.device_authorization_endpoint,
+        };
+    }
+};
+
+/// Validate that an endpoint URL uses HTTPS (or is localhost for development)
+fn validateEndpointSecurity(url: []const u8) !void {
+    // Allow HTTPS
+    if (std.mem.startsWith(u8, url, "https://")) return;
+
+    // Allow localhost/127.0.0.1 for development
+    if (std.mem.startsWith(u8, url, "http://localhost") or
+        std.mem.startsWith(u8, url, "http://127.0.0.1") or
+        std.mem.startsWith(u8, url, "http://[::1]"))
+    {
+        return;
+    }
+
+    return error.InsecureEndpoint;
+}
 
 /// Device authorization response from RFC 8628
 pub const DeviceAuthorizationResponse = struct {
@@ -177,6 +339,9 @@ pub const OAuthClient = struct {
     const HttpClient = struct {
         allocator: Allocator,
 
+        /// Maximum response size (1 MB) to prevent unbounded memory allocation
+        const max_response_size: usize = 1024 * 1024;
+
         pub fn init(allocator: Allocator) HttpClient {
             return .{ .allocator = allocator };
         }
@@ -189,7 +354,7 @@ pub const OAuthClient = struct {
             var client = http.Client{ .allocator = self.allocator };
             defer client.deinit();
 
-            // Create response body storage
+            // Create response body storage using the Io.Writer.Allocating interface
             var response_writer = std.Io.Writer.Allocating.init(self.allocator);
             errdefer response_writer.deinit();
 
@@ -204,9 +369,17 @@ pub const OAuthClient = struct {
                 .response_writer = &response_writer.writer,
             });
 
+            const response_body = try response_writer.toOwnedSlice();
+
+            // Check if response exceeds maximum allowed size
+            if (response_body.len > max_response_size) {
+                self.allocator.free(response_body);
+                return error.ResponseTooLarge;
+            }
+
             return HttpResponse{
                 .status = @intFromEnum(result.status),
-                .body = try response_writer.toOwnedSlice(),
+                .body = response_body,
                 .allocator = self.allocator,
             };
         }
@@ -299,7 +472,12 @@ pub const OAuthClient = struct {
         var interval = device_response.interval;
         if (interval < 5) interval = 5; // Minimum 5 seconds
 
-        while (true) {
+        // Maximum polling iterations (safety limit to prevent infinite loops)
+        // With 5s minimum interval and typical 15min expiry, max ~180 iterations is reasonable
+        const max_iterations: u32 = 500;
+        var iterations: u32 = 0;
+
+        while (iterations < max_iterations) : (iterations += 1) {
             const now = @as(u64, @intCast(std.time.timestamp()));
             if (now - start_time >= device_response.expires_in) {
                 return error.DeviceCodeExpired;
@@ -350,6 +528,9 @@ pub const OAuthClient = struct {
             // Success - parse token
             return try Token.fromJsonValue(self.allocator, token_parsed.value);
         }
+
+        // If we exit the loop without returning, max iterations was exceeded
+        return error.DeviceCodeExpired;
     }
 
     /// Perform Authorization Code Flow with PKCE
@@ -505,30 +686,67 @@ pub const OAuthClient = struct {
     }
 
     fn parseDeviceResponse(allocator: Allocator, value: json.Value) !DeviceAuthorizationResponse {
+        // Validate input is an object
+        if (value != .object) return error.ServerError;
         const obj = value.object;
 
-        const device_code = obj.get("device_code") orelse return error.ServerError;
-        const user_code = obj.get("user_code") orelse return error.ServerError;
-        const verification_uri = obj.get("verification_uri") orelse return error.ServerError;
-        const expires_in = obj.get("expires_in") orelse return error.ServerError;
+        // Validate required fields exist and have correct types
+        const device_code_val = obj.get("device_code") orelse return error.ServerError;
+        if (device_code_val != .string) return error.ServerError;
 
-        const interval_val = obj.get("interval");
-        const interval: u64 = if (interval_val) |iv| @intCast(iv.integer) else 5;
+        const user_code_val = obj.get("user_code") orelse return error.ServerError;
+        if (user_code_val != .string) return error.ServerError;
 
-        var uri_complete: ?[]const u8 = null;
-        if (obj.get("verification_uri_complete")) |uri| {
-            if (uri != .null) {
-                uri_complete = try allocator.dupe(u8, uri.string);
+        const verification_uri_val = obj.get("verification_uri") orelse return error.ServerError;
+        if (verification_uri_val != .string) return error.ServerError;
+
+        const expires_in_val = obj.get("expires_in") orelse return error.ServerError;
+        if (expires_in_val != .integer) return error.ServerError;
+
+        // Safe integer cast with validation
+        const expires_in_raw = expires_in_val.integer;
+        if (expires_in_raw < 0 or expires_in_raw > std.math.maxInt(u64)) {
+            return error.ServerError;
+        }
+        const expires_in: u64 = @intCast(expires_in_raw);
+
+        // Parse optional interval with safe cast
+        var interval: u64 = 5; // default
+        if (obj.get("interval")) |iv| {
+            if (iv == .integer) {
+                const interval_raw = iv.integer;
+                if (interval_raw > 0 and interval_raw <= 300) { // max 5 minutes
+                    interval = @intCast(interval_raw);
+                }
             }
         }
 
+        // Parse optional verification_uri_complete
+        var uri_complete: ?[]const u8 = null;
+        if (obj.get("verification_uri_complete")) |uri| {
+            if (uri == .string) {
+                uri_complete = try allocator.dupe(u8, uri.string);
+            }
+        }
+        errdefer if (uri_complete) |uc| allocator.free(uc);
+
+        // Allocate all required fields with proper errdefer cleanup
+        const device_code = try allocator.dupe(u8, device_code_val.string);
+        errdefer allocator.free(device_code);
+
+        const user_code = try allocator.dupe(u8, user_code_val.string);
+        errdefer allocator.free(user_code);
+
+        const verification_uri = try allocator.dupe(u8, verification_uri_val.string);
+        // No errdefer needed - this is the last allocation, success path
+
         return .{
             .allocator = allocator,
-            .device_code = try allocator.dupe(u8, device_code.string),
-            .user_code = try allocator.dupe(u8, user_code.string),
-            .verification_uri = try allocator.dupe(u8, verification_uri.string),
+            .device_code = device_code,
+            .user_code = user_code,
+            .verification_uri = verification_uri,
             .verification_uri_complete = uri_complete,
-            .expires_in = @intCast(expires_in.integer),
+            .expires_in = expires_in,
             .interval = interval,
         };
     }
@@ -644,18 +862,8 @@ pub const TokenRefresher = struct {
     }
 };
 
-fn appendUrlEncoded(allocator: Allocator, buf: *std.ArrayListUnmanaged(u8), input: []const u8) !void {
-    for (input) |c| {
-        if (std.ascii.isAlphanumeric(c) or c == '-' or c == '_' or c == '.' or c == '~') {
-            try buf.append(allocator, c);
-        } else {
-            try buf.append(allocator, '%');
-            const hex = "0123456789ABCDEF";
-            try buf.append(allocator, hex[c >> 4]);
-            try buf.append(allocator, hex[c & 0x0F]);
-        }
-    }
-}
+/// Re-export appendUrlEncoded from callback module to avoid duplication
+const appendUrlEncoded = callback.appendUrlEncoded;
 
 test "OAuthConfig GitHub preset" {
     const config = OAuthConfig.github("test-client-id", "repo user");

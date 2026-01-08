@@ -321,7 +321,14 @@ pub fn buildAuthorizationUrl(
     return buf.toOwnedSlice(allocator);
 }
 
-fn appendUrlEncoded(allocator: Allocator, buf: *std.ArrayListUnmanaged(u8), input: []const u8) !void {
+/// Append a URL-encoded string to the buffer (RFC 3986 unreserved characters)
+///
+/// This function encodes all characters except unreserved characters:
+/// - Alphanumeric: A-Z, a-z, 0-9
+/// - Special: - _ . ~
+///
+/// All other characters are percent-encoded as %XX where XX is the hex value.
+pub fn appendUrlEncoded(allocator: Allocator, buf: *std.ArrayListUnmanaged(u8), input: []const u8) !void {
     for (input) |c| {
         if (std.ascii.isAlphanumeric(c) or c == '-' or c == '_' or c == '.' or c == '~') {
             try buf.append(allocator, c);
@@ -335,12 +342,32 @@ fn appendUrlEncoded(allocator: Allocator, buf: *std.ArrayListUnmanaged(u8), inpu
 }
 
 /// Open a URL in the system's default browser
+///
+/// Note: This function validates that the URL is safe before passing to system commands.
+/// Only HTTP/HTTPS URLs are allowed to prevent command injection.
 pub fn openBrowser(url: []const u8) !void {
     const builtin = @import("builtin");
 
     // Check for SCHLUSSEL_NO_BROWSER environment variable
     if (std.posix.getenv("SCHLUSSEL_NO_BROWSER")) |_| {
         return; // Don't open browser
+    }
+
+    // Validate URL to prevent command injection
+    // Only allow http:// and https:// URLs
+    if (!std.mem.startsWith(u8, url, "http://") and !std.mem.startsWith(u8, url, "https://")) {
+        return error.InvalidUrl;
+    }
+
+    // Check for dangerous characters that could be interpreted as shell commands
+    for (url) |c| {
+        switch (c) {
+            // Disallow shell metacharacters
+            '&', '|', ';', '`', '$', '(', ')', '{', '}', '[', ']', '<', '>', '\n', '\r', 0 => {
+                return error.InvalidUrl;
+            },
+            else => {},
+        }
     }
 
     const allocator = std.heap.page_allocator;
@@ -356,6 +383,8 @@ pub fn openBrowser(url: []const u8) !void {
         child.stdout_behavior = .Ignore;
         _ = try child.spawnAndWait();
     } else if (builtin.os.tag == .windows) {
+        // On Windows, use 'start' via cmd.exe
+        // The URL has been validated above to not contain dangerous characters
         var child = std.process.Child.init(&.{ "cmd", "/c", "start", "", url }, allocator);
         child.stderr_behavior = .Ignore;
         child.stdout_behavior = .Ignore;

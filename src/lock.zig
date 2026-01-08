@@ -112,6 +112,9 @@ pub const RefreshLock = struct {
 
     /// Acquire a blocking exclusive lock
     pub fn acquire(allocator: Allocator, lock_dir: []const u8, key: []const u8) !RefreshLock {
+        // Validate key to prevent path traversal attacks
+        try validateLockKey(key);
+
         const lock_path = try std.fmt.allocPrint(allocator, "{s}/{s}.lock", .{ lock_dir, key });
         errdefer allocator.free(lock_path);
 
@@ -128,6 +131,9 @@ pub const RefreshLock = struct {
     ///
     /// Returns null if the lock cannot be acquired immediately
     pub fn tryAcquire(allocator: Allocator, lock_dir: []const u8, key: []const u8) !?RefreshLock {
+        // Validate key to prevent path traversal attacks
+        try validateLockKey(key);
+
         const lock_path = try std.fmt.allocPrint(allocator, "{s}/{s}.lock", .{ lock_dir, key });
         errdefer allocator.free(lock_path);
 
@@ -144,6 +150,25 @@ pub const RefreshLock = struct {
             .file = file,
             .lock_path = lock_path,
         };
+    }
+
+    /// Validate that a lock key is safe (no path traversal)
+    fn validateLockKey(key: []const u8) !void {
+        if (key.len == 0) return error.InvalidParameter;
+        if (key.len > 255) return error.InvalidParameter;
+
+        // Check for path traversal and dangerous characters
+        for (key) |c| {
+            switch (c) {
+                '/', '\\', 0, '\n', '\r' => return error.InvalidParameter,
+                else => {},
+            }
+        }
+
+        // Disallow ".." anywhere in the key
+        if (std.mem.indexOf(u8, key, "..") != null) {
+            return error.InvalidParameter;
+        }
     }
 
     /// Release the lock

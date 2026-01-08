@@ -28,9 +28,14 @@ const SecureStorage = session.SecureStorage;
 const OAuthConfig = oauth.OAuthConfig;
 const OAuthClient = oauth.OAuthClient;
 
-/// Global allocator for FFI operations
+/// Allocator for FFI operations
+/// Note: Zig's GeneralPurposeAllocator is internally thread-safe, so no external mutex is needed.
+/// Each allocation/free operation is atomic with respect to other threads.
 var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-const allocator = gpa.allocator();
+
+fn getAllocator() std.mem.Allocator {
+    return gpa.allocator();
+}
 
 /// Opaque client handle
 pub const SchlusselClient = extern struct {
@@ -109,6 +114,8 @@ export fn schlussel_client_new(
 }
 
 fn createClient(config: OAuthConfig, app_name: []const u8) ?*SchlusselClient {
+    const allocator = getAllocator();
+
     // Try to create secure storage, fall back to file storage
     const storage = SecureStorage.init(allocator, app_name) catch {
         return createClientWithFileStorage(config, app_name);
@@ -138,6 +145,8 @@ fn createClient(config: OAuthConfig, app_name: []const u8) ?*SchlusselClient {
 }
 
 fn createClientWithFileStorage(config: OAuthConfig, app_name: []const u8) ?*SchlusselClient {
+    const allocator = getAllocator();
+
     const storage = FileStorage.init(allocator, app_name) catch return null;
 
     const storage_ptr = allocator.create(FileStorage) catch return null;
@@ -164,6 +173,8 @@ fn createClientWithFileStorage(config: OAuthConfig, app_name: []const u8) ?*Schl
 }
 
 fn createClientWithMemoryStorage(config: OAuthConfig) ?*SchlusselClient {
+    const allocator = getAllocator();
+
     const storage = MemoryStorage.init(allocator);
 
     const storage_ptr = allocator.create(MemoryStorage) catch return null;
@@ -190,12 +201,17 @@ fn createClientWithMemoryStorage(config: OAuthConfig) ?*SchlusselClient {
 }
 
 /// Free an OAuth client
+///
+/// Note: Cleanup order is important - client must be freed before storage
+/// because the client holds a reference to the storage interface.
 export fn schlussel_client_free(client: ?*SchlusselClient) void {
     const handle = client orelse return;
+    const allocator = getAllocator();
 
+    // First, deinit the client (this doesn't use storage, just cleans up http_client if any)
     handle.client.deinit();
-    allocator.destroy(handle.client);
 
+    // Then free the storage (while client pointer still exists but is deinitialized)
     switch (handle.storage_type) {
         .memory => {
             const storage: *MemoryStorage = @ptrCast(@alignCast(handle.storage));
@@ -214,6 +230,8 @@ export fn schlussel_client_free(client: ?*SchlusselClient) void {
         },
     }
 
+    // Finally, free the client struct and the handle
+    allocator.destroy(handle.client);
     allocator.destroy(handle);
 }
 
@@ -224,6 +242,7 @@ export fn schlussel_client_free(client: ?*SchlusselClient) void {
 /// Perform Device Code Flow authorization
 export fn schlussel_authorize_device(client: ?*SchlusselClient) ?*SchlusselToken {
     const handle = client orelse return null;
+    const allocator = getAllocator();
 
     var token = handle.client.authorizeDevice() catch return null;
 
@@ -246,6 +265,7 @@ export fn schlussel_authorize_device(client: ?*SchlusselClient) ?*SchlusselToken
 /// Perform Authorization Code Flow with callback server
 export fn schlussel_authorize(client: ?*SchlusselClient) ?*SchlusselToken {
     const handle = client orelse return null;
+    const allocator = getAllocator();
 
     var token = handle.client.authorize() catch return null;
 
@@ -291,6 +311,7 @@ export fn schlussel_get_token(
     key: [*c]const u8,
 ) ?*SchlusselToken {
     const handle = client orelse return null;
+    const allocator = getAllocator();
 
     var token = (handle.client.getToken(std.mem.span(key)) catch return null) orelse return null;
 
@@ -330,6 +351,7 @@ export fn schlussel_refresh_token(
     refresh_token: [*c]const u8,
 ) ?*SchlusselToken {
     const handle = client orelse return null;
+    const allocator = getAllocator();
 
     var token = handle.client.refreshToken(std.mem.span(refresh_token)) catch return null;
 
@@ -394,6 +416,7 @@ export fn schlussel_token_get_expires_at(token: ?*SchlusselToken) u64 {
 /// Free a token
 export fn schlussel_token_free(token: ?*SchlusselToken) void {
     const handle = token orelse return;
+    const allocator = getAllocator();
     handle.token.deinit();
     allocator.destroy(handle.token);
     allocator.destroy(handle);
@@ -406,6 +429,7 @@ export fn schlussel_token_free(token: ?*SchlusselToken) void {
 /// Free a string returned by Schlussel functions
 export fn schlussel_string_free(str: ?[*:0]u8) void {
     const s = str orelse return;
+    const allocator = getAllocator();
     // Calculate length to free
     var len: usize = 0;
     while (s[len] != 0) : (len += 1) {}
@@ -417,6 +441,7 @@ export fn schlussel_string_free(str: ?[*:0]u8) void {
 // ============================================================================
 
 fn dupeToC(str: []const u8) ?[*:0]u8 {
+    const allocator = getAllocator();
     const result = allocator.allocSentinel(u8, str.len, 0) catch return null;
     @memcpy(result, str);
     return result;
