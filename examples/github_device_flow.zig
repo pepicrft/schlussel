@@ -33,14 +33,18 @@ pub fn main() !void {
     const stderr = &stderr_writer.interface;
 
     // Get client ID from environment
-    const client_id = std.posix.getenv("GITHUB_CLIENT_ID") orelse {
-        try stderr.print("Error: GITHUB_CLIENT_ID environment variable not set\n", .{});
-        try stderr.print("\nTo use this example:\n", .{});
-        try stderr.print("1. Create a GitHub OAuth App at https://github.com/settings/applications/new\n", .{});
-        try stderr.print("2. Enable 'Device Authorization Flow' in the app settings\n", .{});
-        try stderr.print("3. Run: export GITHUB_CLIENT_ID=\"your-client-id\"\n", .{});
-        return;
+    const client_id = std.process.getEnvVarOwned(allocator, "GITHUB_CLIENT_ID") catch |err| switch (err) {
+        error.EnvironmentVariableNotFound => {
+            try stderr.print("Error: GITHUB_CLIENT_ID environment variable not set\n", .{});
+            try stderr.print("\nTo use this example:\n", .{});
+            try stderr.print("1. Create a GitHub OAuth App at https://github.com/settings/applications/new\n", .{});
+            try stderr.print("2. Enable 'Device Authorization Flow' in the app settings\n", .{});
+            try stderr.print("3. Run: export GITHUB_CLIENT_ID=\"your-client-id\"\n", .{});
+            return;
+        },
+        else => return err,
     };
+    defer allocator.free(client_id);
 
     // Create OAuth configuration for GitHub
     const config = schlussel.OAuthConfig.github(client_id, "repo user");
