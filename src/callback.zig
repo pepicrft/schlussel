@@ -26,6 +26,16 @@ const net = std.net;
 const http = std.http;
 const Allocator = std.mem.Allocator;
 
+/// Cross-platform helper to check if an environment variable is set
+fn hasEnvVar(name: []const u8) bool {
+    if (std.process.getEnvVarOwned(std.heap.page_allocator, name)) |val| {
+        std.heap.page_allocator.free(val);
+        return true;
+    } else |_| {
+        return false;
+    }
+}
+
 /// Result of OAuth callback
 pub const CallbackResult = struct {
     allocator: Allocator,
@@ -349,7 +359,7 @@ pub fn openBrowser(url: []const u8) !void {
     const builtin = @import("builtin");
 
     // Check for SCHLUSSEL_NO_BROWSER environment variable
-    if (std.posix.getenv("SCHLUSSEL_NO_BROWSER")) |_| {
+    if (hasEnvVar("SCHLUSSEL_NO_BROWSER")) {
         return; // Don't open browser
     }
 

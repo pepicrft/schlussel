@@ -27,6 +27,15 @@ const fs = std.fs;
 const mem = std.mem;
 const Allocator = std.mem.Allocator;
 
+/// Cross-platform helper to get environment variable
+/// Returns null if not found
+fn getEnvVar(allocator: Allocator, name: []const u8) ?[]const u8 {
+    return std.process.getEnvVarOwned(allocator, name) catch |err| switch (err) {
+        error.EnvironmentVariableNotFound => null,
+        else => null,
+    };
+}
+
 /// OAuth 2.0 Token
 pub const Token = struct {
     allocator: Allocator,
@@ -554,18 +563,22 @@ pub const FileStorage = struct {
 
         if (builtin.os.tag == .linux) {
             // XDG Base Directory Specification
-            if (std.posix.getenv("XDG_DATA_HOME")) |xdg_data| {
+            if (getEnvVar(allocator, "XDG_DATA_HOME")) |xdg_data| {
+                defer allocator.free(xdg_data);
                 return std.fmt.allocPrint(allocator, "{s}/{s}", .{ xdg_data, app_name });
             }
-            if (std.posix.getenv("HOME")) |home| {
+            if (getEnvVar(allocator, "HOME")) |home| {
+                defer allocator.free(home);
                 return std.fmt.allocPrint(allocator, "{s}/.local/share/{s}", .{ home, app_name });
             }
         } else if (builtin.os.tag == .macos) {
-            if (std.posix.getenv("HOME")) |home| {
+            if (getEnvVar(allocator, "HOME")) |home| {
+                defer allocator.free(home);
                 return std.fmt.allocPrint(allocator, "{s}/Library/Application Support/{s}", .{ home, app_name });
             }
         } else if (builtin.os.tag == .windows) {
-            if (std.posix.getenv("LOCALAPPDATA")) |local_app_data| {
+            if (getEnvVar(allocator, "LOCALAPPDATA")) |local_app_data| {
+                defer allocator.free(local_app_data);
                 return std.fmt.allocPrint(allocator, "{s}\\{s}", .{ local_app_data, app_name });
             }
         }
@@ -849,17 +862,20 @@ pub const SecureStorage = struct {
     fn getFallbackPath(allocator: Allocator, service: []const u8, account: []const u8) ![]const u8 {
         // Use XDG_RUNTIME_DIR if available (per-user, tmpfs, secure permissions)
         // Otherwise use user-specific directory under XDG_DATA_HOME or HOME
-        if (std.posix.getenv("XDG_RUNTIME_DIR")) |runtime_dir| {
+        if (getEnvVar(allocator, "XDG_RUNTIME_DIR")) |runtime_dir| {
+            defer allocator.free(runtime_dir);
             return std.fmt.allocPrint(allocator, "{s}/schlussel-{s}-{s}", .{ runtime_dir, service, account });
         }
-        if (std.posix.getenv("XDG_DATA_HOME")) |data_home| {
+        if (getEnvVar(allocator, "XDG_DATA_HOME")) |data_home| {
+            defer allocator.free(data_home);
             return std.fmt.allocPrint(allocator, "{s}/schlussel/.{s}-{s}", .{ data_home, service, account });
         }
-        if (std.posix.getenv("HOME")) |home| {
+        if (getEnvVar(allocator, "HOME")) |home| {
+            defer allocator.free(home);
             return std.fmt.allocPrint(allocator, "{s}/.local/share/schlussel/.{s}-{s}", .{ home, service, account });
         }
         // Last resort: use a predictable but user-specific location
-        return std.fmt.allocPrint(allocator, "/tmp/.schlussel-{d}-{s}-{s}", .{ std.posix.getuid(), service, account });
+        return std.fmt.allocPrint(allocator, "/tmp/.schlussel-{d}-{s}-{s}", .{ std.os.linux.getuid(), service, account });
     }
 
     fn fallbackStore(allocator: Allocator, service: []const u8, account: []const u8, data: []const u8) !void {

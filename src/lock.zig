@@ -22,6 +22,15 @@ const fs = std.fs;
 const posix = std.posix;
 const Allocator = std.mem.Allocator;
 
+/// Cross-platform helper to get environment variable
+/// Returns null if not found
+fn getEnvVar(allocator: Allocator, name: []const u8) ?[]const u8 {
+    return std.process.getEnvVarOwned(allocator, name) catch |err| switch (err) {
+        error.EnvironmentVariableNotFound => null,
+        else => null,
+    };
+}
+
 /// Manager for refresh locks
 pub const RefreshLockManager = struct {
     allocator: Allocator,
@@ -84,17 +93,20 @@ pub const RefreshLockManager = struct {
 
         if (builtin.os.tag == .linux) {
             // XDG Runtime directory or temp
-            if (std.posix.getenv("XDG_RUNTIME_DIR")) |runtime_dir| {
+            if (getEnvVar(allocator, "XDG_RUNTIME_DIR")) |runtime_dir| {
+                defer allocator.free(runtime_dir);
                 return std.fmt.allocPrint(allocator, "{s}/{s}/locks", .{ runtime_dir, app_name });
             }
             return std.fmt.allocPrint(allocator, "/tmp/{s}/locks", .{app_name});
         } else if (builtin.os.tag == .macos) {
-            if (std.posix.getenv("HOME")) |home| {
+            if (getEnvVar(allocator, "HOME")) |home| {
+                defer allocator.free(home);
                 return std.fmt.allocPrint(allocator, "{s}/Library/Caches/{s}/locks", .{ home, app_name });
             }
             return std.fmt.allocPrint(allocator, "/tmp/{s}/locks", .{app_name});
         } else if (builtin.os.tag == .windows) {
-            if (std.posix.getenv("LOCALAPPDATA")) |local_app_data| {
+            if (getEnvVar(allocator, "LOCALAPPDATA")) |local_app_data| {
+                defer allocator.free(local_app_data);
                 return std.fmt.allocPrint(allocator, "{s}\\{s}\\locks", .{ local_app_data, app_name });
             }
             return std.fmt.allocPrint(allocator, "C:\\Temp\\{s}\\locks", .{app_name});
