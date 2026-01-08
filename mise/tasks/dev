@@ -1,5 +1,0 @@
-#!/usr/bin/env bash
-#MISE description="Build for development"
-set -euo pipefail
-
-cargo build

@@ -1,4 +1,0 @@
-module Schlussel {
-    header "schlussel.h"
-    export *
-}

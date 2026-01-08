@@ -1,196 +1,179 @@
-# 🔐 Schlussel
+# Schlussel
 
-> **Secure OAuth 2.0 for CLI applications** - Written in Rust, works everywhere 🦀
+**Secure OAuth 2.0 for CLI applications** - Written in Zig, works everywhere
 
 OAuth authentication made simple for command-line tools. No more copying tokens or managing credentials manually!
 
 ---
 
-## ✨ Features
+## Features
 
-🔑 **Multiple OAuth Flows**
+**Multiple OAuth Flows**
 - Device Code Flow (perfect for CLI!)
 - Authorization Code Flow with PKCE
 - Automatic browser handling
 
-🔒 **Secure by Default**
+**Secure by Default**
 - OS credential manager integration (Keychain/Credential Manager)
 - Cross-process token refresh locking
 - Automatic token refresh
 
-⚡ **Developer Friendly**
+**Developer Friendly**
 - Provider presets (GitHub, Google, Microsoft, GitLab, Tuist)
 - One-line configuration
 - Automatic expiration handling
 
-🌍 **Cross-Platform**
+**Cross-Platform**
 - Linux, macOS, Windows
 - x86_64 and ARM64
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Installation
 
-**Rust:**
-```toml
-[dependencies]
-schlussel = "0.1"
+Add as a Zig dependency in your `build.zig.zon`:
+```zig
+.dependencies = .{
+    .schlussel = .{
+        .url = "https://github.com/pepicrft/schlussel/archive/refs/heads/main.tar.gz",
+    },
+},
 ```
 
-**Swift Package Manager:**
-```swift
-.binaryTarget(
-    name: "Schlussel",
-    url: "https://github.com/tuist/schlussel/releases/download/0.5.0/Schlussel.xcframework.zip",
-    checksum: "36c002746caa5c1af8c6edea751ad971c5b67940775dba398308207dc981e253"
-)
+Then in your `build.zig`:
+```zig
+const schlussel = b.dependency("schlussel", .{});
+exe.root_module.addImport("schlussel", schlussel.module("schlussel"));
 ```
 
-### Authenticate with GitHub (3 lines!)
+### Authenticate with GitHub
 
-```rust
-use schlussel::prelude::*;
-use std::sync::Arc;
+```zig
+const std = @import("std");
+const schlussel = @import("schlussel");
 
-let storage = Arc::new(SecureStorage::new("my-app").unwrap());
-let config = OAuthConfig::github("your-client-id", Some("repo user"));
-let client = OAuthClient::new(config, storage);
+pub fn main() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
 
-// That's it! Opens browser, handles OAuth, returns token
-let token = client.authorize_device().unwrap();
-```
+    // Create storage and client
+    var storage = schlussel.MemoryStorage.init(allocator);
+    defer storage.deinit();
 
----
+    const config = schlussel.OAuthConfig.github("your-client-id", "repo user");
+    var client = schlussel.OAuthClient.init(allocator, config, storage.storage());
+    defer client.deinit();
 
-## 📖 Documentation
+    // That's it! Opens browser, handles OAuth, returns token
+    var token = try client.authorizeDevice();
+    defer token.deinit();
 
-👉 **[Full Documentation](docs/README.md)**
-
-Quick links:
-- 🏃 [Quick Start Guide](docs/quick-start.md)
-- 🔌 [Provider Presets](docs/provider-presets.md) - GitHub, Google, Microsoft, etc.
-- 💾 [Storage Options](docs/storage-backends.md) - Secure, File, or Memory
-- 🔄 [Token Refresh](docs/token-refresh.md) - Automatic refresh strategies
-- 📱 [Swift/iOS Integration](docs/swift-integration.md) - XCFramework usage
-
----
-
-## 💡 Why Schlussel?
-
-### Before Schlussel 😫
-```rust
-// 50+ lines of boilerplate
-// Manual token expiration checking
-// Race conditions with multiple processes
-// Plaintext tokens in files
-// Complex OAuth flow management
-```
-
-### With Schlussel 🎉
-```rust
-// 3 lines total
-let storage = Arc::new(SecureStorage::new("app").unwrap());
-let config = OAuthConfig::github("client-id", Some("repo"));
-let token = OAuthClient::new(config, storage).authorize_device().unwrap();
+    std.debug.print("Access token: {s}\n", .{token.access_token});
+}
 ```
 
 ---
 
-## 🎯 Use Cases
+## Use Cases
 
-✅ CLI tools that need GitHub/GitLab API access  
-✅ Build tools that integrate with cloud services  
-✅ Developer tools with OAuth authentication  
-✅ Cross-platform desktop applications  
-✅ CI/CD tools with secure credential management  
-
----
-
-## 🏗️ Architecture
-
-```
-┌─────────────────┐
-│   Your CLI App  │
-└────────┬────────┘
-         │
-    ┌────▼─────┐
-    │ Schlussel│
-    └────┬─────┘
-         │
-    ┌────▼────────────────────────┐
-    │  Storage Backend            │
-    ├─────────────────────────────┤
-    │ SecureStorage (OS Keyring)  │ ← Recommended
-    │ FileStorage   (JSON files)  │
-    │ MemoryStorage (In-memory)   │
-    └─────────────────────────────┘
-```
+- CLI tools that need GitHub/GitLab API access
+- Build tools that integrate with cloud services
+- Developer tools with OAuth authentication
+- Cross-platform desktop applications
+- CI/CD tools with secure credential management
 
 ---
 
-## 🌟 Highlights
+## Architecture
 
-### 🔐 Secure by Default
+```
++-------------------+
+|   Your CLI App    |
++---------+---------+
+          |
+     +----v-----+
+     | Schlussel|
+     +----+-----+
+          |
+     +----v-----------------------------+
+     |  Storage Backend                 |
+     +----------------------------------+
+     | SecureStorage (OS Keyring)       | <- Recommended
+     | FileStorage   (JSON files)       |
+     | MemoryStorage (In-memory)        |
+     +----------------------------------+
+```
+
+---
+
+## Highlights
+
+### Secure by Default
 Tokens stored in **OS credential manager** (Keychain on macOS, Credential Manager on Windows, libsecret on Linux)
 
-### 🎨 Provider Presets
-```rust
-OAuthConfig::github("id", Some("repo"))      // GitHub
-OAuthConfig::google("id", Some("email"))     // Google
-OAuthConfig::microsoft("id", "common", None) // Microsoft
-OAuthConfig::gitlab("id", None, None)        // GitLab
-OAuthConfig::tuist("id", None, None)         // Tuist
+### Provider Presets
+```zig
+schlussel.OAuthConfig.github("id", "repo")           // GitHub
+schlussel.OAuthConfig.google("id", "email")          // Google
+schlussel.OAuthConfig.microsoft("id", "common", null) // Microsoft
+schlussel.OAuthConfig.gitlab("id", null, null)       // GitLab
+schlussel.OAuthConfig.tuist("id", null, null)        // Tuist
 ```
 
-### ⚡ Automatic Token Refresh
-```rust
-let refresher = TokenRefresher::new(client);
-let token = refresher.get_valid_token("key").unwrap();
+### Automatic Token Refresh
+```zig
+var refresher = schlussel.TokenRefresher.init(allocator, &client);
+defer refresher.deinit();
+
+var token = try refresher.getValidToken("key");
+defer token.deinit();
 // Auto-refreshes if expired!
 ```
 
-### 🔄 Cross-Process Safe
+### Cross-Process Safe
 Multiple processes can safely refresh the same token without race conditions
 
 ---
 
-## 📦 Examples
+## Examples
 
 Check out [examples/](examples/) for working code:
 
-- 🐙 [GitHub Device Flow](examples/github_device_flow.rs)
-- 🌐 [GitHub with Callback](examples/github_callback.rs)
-- 🔄 [Token Refresh](examples/token_refresh.rs)
-- ⚡ [Automatic Refresh](examples/automatic_refresh.rs)
-- 🔐 [Secure Storage](examples/secure_storage.rs)
-- 🔀 [Cross-Process Refresh](examples/cross_process_refresh.rs)
+- [GitHub Device Flow](examples/github_device_flow.zig)
+- [Automatic Refresh](examples/automatic_refresh.zig)
 
 ---
 
-## 🤝 Contributing
+## Building
+
+```bash
+# Build
+zig build
+
+# Run tests
+zig build test
+
+# Format code
+zig fmt src/
+```
+
+---
+
+## Contributing
 
 Contributions welcome! Please ensure:
-- ✅ Tests pass: `cargo test`
-- ✅ Code formatted: `cargo fmt`
-- ✅ Clippy clean: `cargo clippy`
+- Tests pass: `zig build test`
+- Code formatted: `zig fmt --check src/`
 
 ---
 
-## 📄 License
+## License
 
 See [LICENSE](LICENSE) for details.
 
 ---
 
-## 🔗 Links
-
-- 📚 [Documentation](docs/README.md)
-- 🐛 [Issues](https://github.com/tuist/schlussel/issues)
-- 🔄 [Changelog](CHANGELOG.md)
-- 📖 [API Docs](https://docs.rs/schlussel)
-
----
-
-**Made with 💙 by the Tuist team**
+**Made with love by the Tuist team**

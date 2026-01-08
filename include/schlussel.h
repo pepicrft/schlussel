@@ -1,3 +1,41 @@
+/**
+ * Schlussel - Cross-platform OAuth 2.0 library
+ *
+ * This header provides C-compatible bindings for the Schlussel OAuth library.
+ * It supports PKCE, Device Code Flow, and secure token storage.
+ *
+ * ## Usage Example
+ *
+ * ```c
+ * #include <schlussel.h>
+ *
+ * int main() {
+ *     // Create GitHub OAuth client
+ *     SchlusselClient *client = schlussel_client_new_github(
+ *         "your-client-id",
+ *         "repo user",
+ *         "my-app"
+ *     );
+ *     if (!client) {
+ *         fprintf(stderr, "Failed to create client\n");
+ *         return 1;
+ *     }
+ *
+ *     // Perform device code authorization
+ *     SchlusselToken *token = schlussel_authorize_device(client);
+ *     if (token) {
+ *         char *access_token = schlussel_token_get_access_token(token);
+ *         printf("Access token: %s\n", access_token);
+ *         schlussel_string_free(access_token);
+ *         schlussel_token_free(token);
+ *     }
+ *
+ *     schlussel_client_free(client);
+ *     return 0;
+ * }
+ * ```
+ */
+
 #ifndef SCHLUSSEL_H
 #define SCHLUSSEL_H
 
@@ -7,86 +45,256 @@
 extern "C" {
 #endif
 
-/// Opaque pointer to OAuth client
-typedef struct SchlusselClient SchlusselClient;
-
-/// Opaque pointer to Token
-typedef struct SchlusselToken SchlusselToken;
-
-/// Error codes
+/**
+ * Error codes returned by Schlussel functions
+ */
 typedef enum {
     SCHLUSSEL_OK = 0,
-    SCHLUSSEL_INVALID_PARAMETER = 1,
-    SCHLUSSEL_STORAGE_ERROR = 2,
-    SCHLUSSEL_HTTP_ERROR = 3,
-    SCHLUSSEL_AUTHORIZATION_DENIED = 4,
-    SCHLUSSEL_TOKEN_EXPIRED = 5,
-    SCHLUSSEL_NO_REFRESH_TOKEN = 6,
-    SCHLUSSEL_UNKNOWN_ERROR = 99,
+    SCHLUSSEL_ERROR_INVALID_PARAMETER = 1,
+    SCHLUSSEL_ERROR_STORAGE = 2,
+    SCHLUSSEL_ERROR_HTTP = 3,
+    SCHLUSSEL_ERROR_AUTHORIZATION_DENIED = 4,
+    SCHLUSSEL_ERROR_TOKEN_EXPIRED = 5,
+    SCHLUSSEL_ERROR_NO_REFRESH_TOKEN = 6,
+    SCHLUSSEL_ERROR_INVALID_STATE = 7,
+    SCHLUSSEL_ERROR_DEVICE_CODE_EXPIRED = 8,
+    SCHLUSSEL_ERROR_JSON = 9,
+    SCHLUSSEL_ERROR_IO = 10,
+    SCHLUSSEL_ERROR_UNKNOWN = 99,
 } SchlusselError;
 
-/// Create a new OAuth client with GitHub preset
-///
-/// @param client_id The GitHub OAuth App client ID
-/// @param scopes Optional scopes (e.g., "repo user"), or NULL
-/// @param app_name Application name for secure storage
-/// @return Pointer to client, or NULL on error
+/**
+ * Opaque OAuth client handle
+ *
+ * Created by schlussel_client_new_* functions.
+ * Must be freed with schlussel_client_free().
+ */
+typedef struct SchlusselClient SchlusselClient;
+
+/**
+ * Opaque OAuth token handle
+ *
+ * Created by authorization functions or schlussel_get_token().
+ * Must be freed with schlussel_token_free().
+ */
+typedef struct SchlusselToken SchlusselToken;
+
+/* ============================================================================
+ * Client creation functions
+ * ============================================================================ */
+
+/**
+ * Create a new OAuth client with GitHub configuration
+ *
+ * @param client_id     The OAuth client ID (null-terminated)
+ * @param scopes        Space-separated scopes (null-terminated, may be NULL)
+ * @param app_name      Application name for storage (null-terminated)
+ * @return              Client pointer on success, NULL on error
+ */
 SchlusselClient* schlussel_client_new_github(
     const char* client_id,
     const char* scopes,
     const char* app_name
 );
 
-/// Authorize using Device Code Flow
-///
-/// This will display a URL and code to the user, open the browser,
-/// and poll for authorization completion.
-///
-/// @param client The OAuth client
-/// @return Pointer to token, or NULL on error
+/**
+ * Create a new OAuth client with Google configuration
+ *
+ * @param client_id     The OAuth client ID (null-terminated)
+ * @param scopes        Space-separated scopes (null-terminated, may be NULL)
+ * @param app_name      Application name for storage (null-terminated)
+ * @return              Client pointer on success, NULL on error
+ */
+SchlusselClient* schlussel_client_new_google(
+    const char* client_id,
+    const char* scopes,
+    const char* app_name
+);
+
+/**
+ * Create a new OAuth client with custom configuration
+ *
+ * @param client_id                     The OAuth client ID
+ * @param authorization_endpoint        Authorization endpoint URL
+ * @param token_endpoint                Token endpoint URL
+ * @param redirect_uri                  Redirect URI for callbacks
+ * @param scopes                        Space-separated scopes (may be NULL)
+ * @param device_authorization_endpoint Device code endpoint (may be NULL)
+ * @return                              Client pointer on success, NULL on error
+ */
+SchlusselClient* schlussel_client_new(
+    const char* client_id,
+    const char* authorization_endpoint,
+    const char* token_endpoint,
+    const char* redirect_uri,
+    const char* scopes,
+    const char* device_authorization_endpoint
+);
+
+/**
+ * Free an OAuth client
+ *
+ * @param client    The client to free (may be NULL)
+ */
+void schlussel_client_free(SchlusselClient* client);
+
+/* ============================================================================
+ * Authorization functions
+ * ============================================================================ */
+
+/**
+ * Perform Device Code Flow authorization
+ *
+ * This will print the verification URI and user code to stderr, and
+ * optionally open a browser. It blocks until the user completes
+ * authorization or the device code expires.
+ *
+ * @param client    The OAuth client
+ * @return          Token pointer on success, NULL on error
+ */
 SchlusselToken* schlussel_authorize_device(SchlusselClient* client);
 
-/// Save a token with a key
-///
-/// @param client The OAuth client
-/// @param key The token key (e.g., "github.com:user")
-/// @param token The token to save
-/// @return Error code
+/**
+ * Perform Authorization Code Flow with callback server
+ *
+ * This starts a local server, opens the browser for authorization,
+ * and waits for the callback.
+ *
+ * @param client    The OAuth client
+ * @return          Token pointer on success, NULL on error
+ */
+SchlusselToken* schlussel_authorize(SchlusselClient* client);
+
+/* ============================================================================
+ * Token storage operations
+ * ============================================================================ */
+
+/**
+ * Save a token to storage
+ *
+ * @param client    The OAuth client
+ * @param key       Storage key (null-terminated)
+ * @param token     The token to save
+ * @return          SCHLUSSEL_OK on success, error code on failure
+ */
 SchlusselError schlussel_save_token(
     SchlusselClient* client,
     const char* key,
     SchlusselToken* token
 );
 
-/// Get the access token string
-///
-/// @param token The token
-/// @return Newly allocated string (must be freed with schlussel_string_free), or NULL on error
+/**
+ * Get a token from storage
+ *
+ * @param client    The OAuth client
+ * @param key       Storage key (null-terminated)
+ * @return          Token pointer on success, NULL if not found or on error
+ */
+SchlusselToken* schlussel_get_token(
+    SchlusselClient* client,
+    const char* key
+);
+
+/**
+ * Delete a token from storage
+ *
+ * @param client    The OAuth client
+ * @param key       Storage key (null-terminated)
+ * @return          SCHLUSSEL_OK on success, error code on failure
+ */
+SchlusselError schlussel_delete_token(
+    SchlusselClient* client,
+    const char* key
+);
+
+/**
+ * Refresh an access token using a refresh token
+ *
+ * @param client            The OAuth client
+ * @param refresh_token     The refresh token string (null-terminated)
+ * @return                  New token pointer on success, NULL on error
+ */
+SchlusselToken* schlussel_refresh_token(
+    SchlusselClient* client,
+    const char* refresh_token
+);
+
+/* ============================================================================
+ * Token accessors
+ * ============================================================================ */
+
+/**
+ * Get the access token string
+ *
+ * @param token     The token
+ * @return          Newly allocated string, or NULL on error
+ *                  Must be freed with schlussel_string_free()
+ */
 char* schlussel_token_get_access_token(SchlusselToken* token);
 
-/// Check if token is expired
-///
-/// @param token The token
-/// @return 1 if expired, 0 if not expired
-int32_t schlussel_token_is_expired(SchlusselToken* token);
+/**
+ * Get the refresh token string
+ *
+ * @param token     The token
+ * @return          Newly allocated string, or NULL if not present
+ *                  Must be freed with schlussel_string_free()
+ */
+char* schlussel_token_get_refresh_token(SchlusselToken* token);
 
-/// Free a string allocated by schlussel
-///
-/// @param s The string to free
-void schlussel_string_free(char* s);
+/**
+ * Get the token type string (usually "Bearer")
+ *
+ * @param token     The token
+ * @return          Newly allocated string, or NULL on error
+ *                  Must be freed with schlussel_string_free()
+ */
+char* schlussel_token_get_token_type(SchlusselToken* token);
 
-/// Free a token
-///
-/// @param token The token to free
+/**
+ * Get the scope string
+ *
+ * @param token     The token
+ * @return          Newly allocated string, or NULL if not present
+ *                  Must be freed with schlussel_string_free()
+ */
+char* schlussel_token_get_scope(SchlusselToken* token);
+
+/**
+ * Check if the token is expired
+ *
+ * @param token     The token
+ * @return          1 if expired, 0 if not expired, -1 on error
+ */
+int schlussel_token_is_expired(SchlusselToken* token);
+
+/**
+ * Get the token expiration timestamp
+ *
+ * @param token     The token
+ * @return          Unix timestamp (seconds), or 0 if not set
+ */
+uint64_t schlussel_token_get_expires_at(SchlusselToken* token);
+
+/**
+ * Free a token
+ *
+ * @param token     The token to free (may be NULL)
+ */
 void schlussel_token_free(SchlusselToken* token);
 
-/// Free a client
-///
-/// @param client The client to free
-void schlussel_client_free(SchlusselClient* client);
+/* ============================================================================
+ * String operations
+ * ============================================================================ */
+
+/**
+ * Free a string returned by Schlussel functions
+ *
+ * @param str       The string to free (may be NULL)
+ */
+void schlussel_string_free(char* str);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif // SCHLUSSEL_H
+#endif /* SCHLUSSEL_H */

@@ -1,0 +1,461 @@
+//! C FFI bindings for Schlussel OAuth library
+//!
+//! This module provides C-compatible functions for integrating Schlussel
+//! with languages like Swift, Objective-C, C, and others that can call C functions.
+//!
+//! ## Memory Management
+//!
+//! - All returned pointers must be freed using the corresponding `*_free` functions
+//! - Strings returned by accessor functions must be freed with `schlussel_string_free`
+//! - NULL checks should be performed on all returned pointers
+//!
+//! ## Error Handling
+//!
+//! - Functions that can fail return NULL pointers or error codes
+//! - Use the `SchlusselError` enum values to check specific errors
+
+const std = @import("std");
+const Allocator = std.mem.Allocator;
+
+const session = @import("session.zig");
+const oauth = @import("oauth.zig");
+const error_types = @import("error.zig");
+
+const Token = session.Token;
+const MemoryStorage = session.MemoryStorage;
+const FileStorage = session.FileStorage;
+const SecureStorage = session.SecureStorage;
+const OAuthConfig = oauth.OAuthConfig;
+const OAuthClient = oauth.OAuthClient;
+
+/// Global allocator for FFI operations
+var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+const allocator = gpa.allocator();
+
+/// Opaque client handle
+pub const SchlusselClient = extern struct {
+    client: *OAuthClient,
+    storage: *anyopaque,
+    storage_type: StorageType,
+
+    const StorageType = enum(u8) {
+        memory,
+        file,
+        secure,
+    };
+};
+
+/// Opaque token handle
+pub const SchlusselToken = extern struct {
+    token: *Token,
+};
+
+// ============================================================================
+// Client creation functions
+// ============================================================================
+
+/// Create a new OAuth client with GitHub configuration
+export fn schlussel_client_new_github(
+    client_id: [*c]const u8,
+    scopes: [*c]const u8,
+    app_name: [*c]const u8,
+) ?*SchlusselClient {
+    return createClient(
+        OAuthConfig.github(
+            std.mem.span(client_id),
+            if (scopes != null) std.mem.span(scopes) else null,
+        ),
+        std.mem.span(app_name),
+    );
+}
+
+/// Create a new OAuth client with Google configuration
+export fn schlussel_client_new_google(
+    client_id: [*c]const u8,
+    scopes: [*c]const u8,
+    app_name: [*c]const u8,
+) ?*SchlusselClient {
+    return createClient(
+        OAuthConfig.google(
+            std.mem.span(client_id),
+            if (scopes != null) std.mem.span(scopes) else null,
+        ),
+        std.mem.span(app_name),
+    );
+}
+
+/// Create a new OAuth client with custom configuration
+export fn schlussel_client_new(
+    client_id: [*c]const u8,
+    authorization_endpoint: [*c]const u8,
+    token_endpoint: [*c]const u8,
+    redirect_uri: [*c]const u8,
+    scopes: [*c]const u8,
+    device_authorization_endpoint: [*c]const u8,
+) ?*SchlusselClient {
+    const config = OAuthConfig{
+        .client_id = std.mem.span(client_id),
+        .authorization_endpoint = std.mem.span(authorization_endpoint),
+        .token_endpoint = std.mem.span(token_endpoint),
+        .redirect_uri = std.mem.span(redirect_uri),
+        .scope = if (scopes != null) std.mem.span(scopes) else null,
+        .device_authorization_endpoint = if (device_authorization_endpoint != null)
+            std.mem.span(device_authorization_endpoint)
+        else
+            null,
+    };
+
+    return createClientWithMemoryStorage(config);
+}
+
+fn createClient(config: OAuthConfig, app_name: []const u8) ?*SchlusselClient {
+    // Try to create secure storage, fall back to file storage
+    const storage = SecureStorage.init(allocator, app_name) catch {
+        return createClientWithFileStorage(config, app_name);
+    };
+
+    const storage_ptr = allocator.create(SecureStorage) catch return null;
+    storage_ptr.* = storage;
+
+    const client_ptr = allocator.create(OAuthClient) catch {
+        allocator.destroy(storage_ptr);
+        return null;
+    };
+    client_ptr.* = OAuthClient.init(allocator, config, storage_ptr.storage());
+
+    const handle = allocator.create(SchlusselClient) catch {
+        allocator.destroy(client_ptr);
+        allocator.destroy(storage_ptr);
+        return null;
+    };
+    handle.* = .{
+        .client = client_ptr,
+        .storage = storage_ptr,
+        .storage_type = .secure,
+    };
+
+    return handle;
+}
+
+fn createClientWithFileStorage(config: OAuthConfig, app_name: []const u8) ?*SchlusselClient {
+    const storage = FileStorage.init(allocator, app_name) catch return null;
+
+    const storage_ptr = allocator.create(FileStorage) catch return null;
+    storage_ptr.* = storage;
+
+    const client_ptr = allocator.create(OAuthClient) catch {
+        allocator.destroy(storage_ptr);
+        return null;
+    };
+    client_ptr.* = OAuthClient.init(allocator, config, storage_ptr.storage());
+
+    const handle = allocator.create(SchlusselClient) catch {
+        allocator.destroy(client_ptr);
+        allocator.destroy(storage_ptr);
+        return null;
+    };
+    handle.* = .{
+        .client = client_ptr,
+        .storage = storage_ptr,
+        .storage_type = .file,
+    };
+
+    return handle;
+}
+
+fn createClientWithMemoryStorage(config: OAuthConfig) ?*SchlusselClient {
+    const storage = MemoryStorage.init(allocator);
+
+    const storage_ptr = allocator.create(MemoryStorage) catch return null;
+    storage_ptr.* = storage;
+
+    const client_ptr = allocator.create(OAuthClient) catch {
+        allocator.destroy(storage_ptr);
+        return null;
+    };
+    client_ptr.* = OAuthClient.init(allocator, config, storage_ptr.storage());
+
+    const handle = allocator.create(SchlusselClient) catch {
+        allocator.destroy(client_ptr);
+        allocator.destroy(storage_ptr);
+        return null;
+    };
+    handle.* = .{
+        .client = client_ptr,
+        .storage = storage_ptr,
+        .storage_type = .memory,
+    };
+
+    return handle;
+}
+
+/// Free an OAuth client
+export fn schlussel_client_free(client: ?*SchlusselClient) void {
+    const handle = client orelse return;
+
+    handle.client.deinit();
+    allocator.destroy(handle.client);
+
+    switch (handle.storage_type) {
+        .memory => {
+            const storage: *MemoryStorage = @ptrCast(@alignCast(handle.storage));
+            storage.deinit();
+            allocator.destroy(storage);
+        },
+        .file => {
+            const storage: *FileStorage = @ptrCast(@alignCast(handle.storage));
+            storage.deinit();
+            allocator.destroy(storage);
+        },
+        .secure => {
+            const storage: *SecureStorage = @ptrCast(@alignCast(handle.storage));
+            storage.deinit();
+            allocator.destroy(storage);
+        },
+    }
+
+    allocator.destroy(handle);
+}
+
+// ============================================================================
+// Authorization functions
+// ============================================================================
+
+/// Perform Device Code Flow authorization
+export fn schlussel_authorize_device(client: ?*SchlusselClient) ?*SchlusselToken {
+    const handle = client orelse return null;
+
+    var token = handle.client.authorizeDevice() catch return null;
+
+    const token_ptr = allocator.create(Token) catch {
+        token.deinit();
+        return null;
+    };
+    token_ptr.* = token;
+
+    const token_handle = allocator.create(SchlusselToken) catch {
+        token.deinit();
+        allocator.destroy(token_ptr);
+        return null;
+    };
+    token_handle.* = .{ .token = token_ptr };
+
+    return token_handle;
+}
+
+/// Perform Authorization Code Flow with callback server
+export fn schlussel_authorize(client: ?*SchlusselClient) ?*SchlusselToken {
+    const handle = client orelse return null;
+
+    var token = handle.client.authorize() catch return null;
+
+    const token_ptr = allocator.create(Token) catch {
+        token.deinit();
+        return null;
+    };
+    token_ptr.* = token;
+
+    const token_handle = allocator.create(SchlusselToken) catch {
+        token.deinit();
+        allocator.destroy(token_ptr);
+        return null;
+    };
+    token_handle.* = .{ .token = token_ptr };
+
+    return token_handle;
+}
+
+// ============================================================================
+// Token storage operations
+// ============================================================================
+
+/// Save a token to storage
+export fn schlussel_save_token(
+    client: ?*SchlusselClient,
+    key: [*c]const u8,
+    token: ?*SchlusselToken,
+) c_int {
+    const handle = client orelse return 1; // SCHLUSSEL_ERROR_INVALID_PARAMETER
+    const token_handle = token orelse return 1;
+
+    handle.client.saveToken(std.mem.span(key), token_handle.token.*) catch {
+        return 2; // SCHLUSSEL_ERROR_STORAGE
+    };
+
+    return 0; // SCHLUSSEL_OK
+}
+
+/// Get a token from storage
+export fn schlussel_get_token(
+    client: ?*SchlusselClient,
+    key: [*c]const u8,
+) ?*SchlusselToken {
+    const handle = client orelse return null;
+
+    var token = (handle.client.getToken(std.mem.span(key)) catch return null) orelse return null;
+
+    const token_ptr = allocator.create(Token) catch {
+        token.deinit();
+        return null;
+    };
+    token_ptr.* = token;
+
+    const token_handle = allocator.create(SchlusselToken) catch {
+        token.deinit();
+        allocator.destroy(token_ptr);
+        return null;
+    };
+    token_handle.* = .{ .token = token_ptr };
+
+    return token_handle;
+}
+
+/// Delete a token from storage
+export fn schlussel_delete_token(
+    client: ?*SchlusselClient,
+    key: [*c]const u8,
+) c_int {
+    const handle = client orelse return 1;
+
+    handle.client.deleteToken(std.mem.span(key)) catch {
+        return 2; // SCHLUSSEL_ERROR_STORAGE
+    };
+
+    return 0; // SCHLUSSEL_OK
+}
+
+/// Refresh an access token using a refresh token
+export fn schlussel_refresh_token(
+    client: ?*SchlusselClient,
+    refresh_token: [*c]const u8,
+) ?*SchlusselToken {
+    const handle = client orelse return null;
+
+    var token = handle.client.refreshToken(std.mem.span(refresh_token)) catch return null;
+
+    const token_ptr = allocator.create(Token) catch {
+        token.deinit();
+        return null;
+    };
+    token_ptr.* = token;
+
+    const token_handle = allocator.create(SchlusselToken) catch {
+        token.deinit();
+        allocator.destroy(token_ptr);
+        return null;
+    };
+    token_handle.* = .{ .token = token_ptr };
+
+    return token_handle;
+}
+
+// ============================================================================
+// Token accessors
+// ============================================================================
+
+/// Get the access token string
+export fn schlussel_token_get_access_token(token: ?*SchlusselToken) ?[*:0]u8 {
+    const handle = token orelse return null;
+    return dupeToC(handle.token.access_token);
+}
+
+/// Get the refresh token string
+export fn schlussel_token_get_refresh_token(token: ?*SchlusselToken) ?[*:0]u8 {
+    const handle = token orelse return null;
+    const rt = handle.token.refresh_token orelse return null;
+    return dupeToC(rt);
+}
+
+/// Get the token type string
+export fn schlussel_token_get_token_type(token: ?*SchlusselToken) ?[*:0]u8 {
+    const handle = token orelse return null;
+    return dupeToC(handle.token.token_type);
+}
+
+/// Get the scope string
+export fn schlussel_token_get_scope(token: ?*SchlusselToken) ?[*:0]u8 {
+    const handle = token orelse return null;
+    const scope = handle.token.scope orelse return null;
+    return dupeToC(scope);
+}
+
+/// Check if the token is expired
+export fn schlussel_token_is_expired(token: ?*SchlusselToken) c_int {
+    const handle = token orelse return -1;
+    return if (handle.token.isExpired()) 1 else 0;
+}
+
+/// Get the token expiration timestamp
+export fn schlussel_token_get_expires_at(token: ?*SchlusselToken) u64 {
+    const handle = token orelse return 0;
+    return handle.token.expires_at orelse 0;
+}
+
+/// Free a token
+export fn schlussel_token_free(token: ?*SchlusselToken) void {
+    const handle = token orelse return;
+    handle.token.deinit();
+    allocator.destroy(handle.token);
+    allocator.destroy(handle);
+}
+
+// ============================================================================
+// String operations
+// ============================================================================
+
+/// Free a string returned by Schlussel functions
+export fn schlussel_string_free(str: ?[*:0]u8) void {
+    const s = str orelse return;
+    // Calculate length to free
+    var len: usize = 0;
+    while (s[len] != 0) : (len += 1) {}
+    allocator.free(s[0 .. len + 1]);
+}
+
+// ============================================================================
+// Helper functions
+// ============================================================================
+
+fn dupeToC(str: []const u8) ?[*:0]u8 {
+    const result = allocator.allocSentinel(u8, str.len, 0) catch return null;
+    @memcpy(result, str);
+    return result;
+}
+
+test "FFI client creation and cleanup" {
+    const client = schlussel_client_new_github(
+        "test-client-id",
+        "repo user",
+        "test-app",
+    );
+
+    // Client might be null in test environment (no keyring), that's OK
+    if (client) |c| {
+        schlussel_client_free(c);
+    }
+}
+
+test "FFI token accessors with null safety" {
+    // All accessor functions should handle null gracefully
+    try std.testing.expect(schlussel_token_get_access_token(null) == null);
+    try std.testing.expect(schlussel_token_get_refresh_token(null) == null);
+    try std.testing.expect(schlussel_token_get_token_type(null) == null);
+    try std.testing.expect(schlussel_token_get_scope(null) == null);
+    try std.testing.expect(schlussel_token_is_expired(null) == -1);
+    try std.testing.expect(schlussel_token_get_expires_at(null) == 0);
+}
+
+test "FFI string free with null" {
+    // Should not crash with null
+    schlussel_string_free(null);
+}
+
+test "FFI token free with null" {
+    // Should not crash with null
+    schlussel_token_free(null);
+}
+
+test "FFI client free with null" {
+    // Should not crash with null
+    schlussel_client_free(null);
+}

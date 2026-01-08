@@ -1,0 +1,16 @@
+.{
+    .name = .schlussel,
+    .version = "0.5.0",
+    .fingerprint = 0xf4ad8510b21a5e10,
+    .minimum_zig_version = "0.14.0",
+
+    .dependencies = .{},
+
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "include",
+        "examples",
+    },
+}
