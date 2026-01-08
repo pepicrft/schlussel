@@ -1,0 +1,191 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "The version to release"
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  check-release:
+    name: Check for releasable changes
+    runs-on: ubuntu-latest
+    if: "!startsWith(github.event.head_commit.message, '[Release]')"
+    outputs:
+      should-release: ${{ steps.is-releasable.outputs.should-release }}
+      next-version: ${{ steps.next-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: jdx/mise-action@v2
+
+      - name: Check if there are releasable changes
+        id: is-releasable
+        run: |
+          if ! git describe --tags --abbrev=0 2>/dev/null; then
+            echo "No tags found, this will be the first release"
+            echo "should-release=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          bumped_output=$(git cliff --bump --unreleased 2>/dev/null || echo "")
+          if [ -z "$bumped_output" ]; then
+            echo "No releasable changes found"
+            echo "should-release=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          if [ ! -f CHANGELOG.md ]; then
+            echo "should-release=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          changelog_content=$(cat CHANGELOG.md)
+          bumped_hash=$(echo -n "$bumped_output" | shasum -a 256 | awk '{print $1}')
+          changelog_hash=$(echo -n "$changelog_content" | shasum -a 256 | awk '{print $1}')
+
+          if [ "$bumped_hash" != "$changelog_hash" ]; then
+            echo "should-release=true" >> $GITHUB_OUTPUT
+          else
+            echo "should-release=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Get next version
+        id: next-version
+        if: steps.is-releasable.outputs.should-release == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "version=$(git cliff --bumped-version)" >> "$GITHUB_OUTPUT"
+
+  # ===========================================================================
+  # Build native libraries for FFI
+  # ===========================================================================
+  build-libraries:
+    name: Build library (${{ matrix.target }})
+    needs: check-release
+    if: needs.check-release.outputs.should-release == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-linux
+            artifact: libschlussel-x86_64-linux
+          - target: aarch64-linux
+            artifact: libschlussel-aarch64-linux
+          - target: x86_64-macos
+            artifact: libschlussel-x86_64-macos
+          - target: aarch64-macos
+            artifact: libschlussel-aarch64-macos
+          - target: x86_64-windows
+            artifact: libschlussel-x86_64-windows
+          - target: aarch64-windows
+            artifact: libschlussel-aarch64-windows
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: jdx/mise-action@v2
+
+      - name: Build release library
+        run: zig build -Doptimize=ReleaseFast -Dtarget=${{ matrix.target }}
+
+      - name: Package library
+        run: |
+          mkdir -p dist/${{ matrix.artifact }}
+          cp zig-out/lib/libschlussel.a dist/${{ matrix.artifact }}/ 2>/dev/null || true
+          cp zig-out/lib/schlussel.lib dist/${{ matrix.artifact }}/ 2>/dev/null || true
+          cp zig-out/include/schlussel.h dist/${{ matrix.artifact }}/ 2>/dev/null || true
+          cp include/schlussel.h dist/${{ matrix.artifact }}/ 2>/dev/null || true
+
+          cd dist
+          if [[ "${{ matrix.target }}" == *"windows"* ]]; then
+            zip -r ${{ matrix.artifact }}.zip ${{ matrix.artifact }}
+          else
+            tar -czvf ${{ matrix.artifact }}.tar.gz ${{ matrix.artifact }}
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            dist/${{ matrix.artifact }}.tar.gz
+            dist/${{ matrix.artifact }}.zip
+          if-no-files-found: ignore
+
+  # ===========================================================================
+  # Publish release
+  # ===========================================================================
+  publish:
+    name: Publish release
+    needs:
+      - check-release
+      - build-libraries
+    if: needs.check-release.outputs.should-release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: jdx/mise-action@v2
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release
+          find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" \) -exec cp {} release/ \;
+          cd release
+          sha256sum * > sha256.txt 2>/dev/null || true
+          sha512sum * > sha512.txt 2>/dev/null || true
+
+      - name: Update CHANGELOG.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO: ${{ github.repository }}
+        run: git cliff --bump -o CHANGELOG.md --github-repo "$GITHUB_REPO"
+
+      - name: Commit changes
+        id: auto-commit
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_options: "--allow-empty"
+          skip_dirty_check: true
+          file_pattern: "CHANGELOG.md"
+          commit_message: "[Release] Schlussel ${{ needs.check-release.outputs.next-version }}"
+
+      - name: Get release notes
+        id: release-notes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO: ${{ github.repository }}
+        run: |
+          echo "RELEASE_NOTES<<EOF" >> "$GITHUB_OUTPUT"
+          git cliff --latest --github-repo "$GITHUB_REPO" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          name: ${{ needs.check-release.outputs.next-version }}
+          tag_name: ${{ needs.check-release.outputs.next-version }}
+          body: ${{ steps.release-notes.outputs.RELEASE_NOTES }}
+          target_commitish: ${{ steps.auto-commit.outputs.commit_hash }}
+          files: |
+            release/*

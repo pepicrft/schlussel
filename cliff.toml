@@ -1,0 +1,44 @@
+# git-cliff ~ configuration file
+# https://git-cliff.org/docs/configuration
+
+[remote.github]
+owner = "pepicrft"
+repo = "schlussel"
+
+[changelog]
+header = ""
+body = """
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | upper_first }}
+{% for commit in commits %}
+- {{ commit.message | upper_first | trim }}{% if commit.github.pr_number %} ([#{{ commit.github.pr_number }}](https://github.com/pepicrft/schlussel/pull/{{ commit.github.pr_number }})){% endif %}{% if commit.github.username %} by [@{{ commit.github.username }}](https://github.com/{{ commit.github.username }}){% endif %}
+{%- endfor %}
+{% endfor %}
+
+{% if previous and previous.version -%}
+**Full Changelog**: https://github.com/pepicrft/schlussel/compare/{{ previous.version }}..{{ version }}
+{% endif -%}
+"""
+footer = ""
+trim = true
+postprocessors = []
+
+[git]
+conventional_commits = true
+filter_unconventional = true
+split_commits = false
+commit_preprocessors = [
+  { pattern = '\((\w+\s)?#([0-9]+)\)', replace = "" },
+]
+protect_breaking_commits = false
+filter_commits = false
+tag_pattern = "[0-9].*"
+skip_tags = "beta|alpha"
+ignore_tags = "rc"
+topo_order = false
+sort_commits = "newest"
+
+[bump]
+breaking_always_bump_major = true
+features_always_bump_minor = true
+initial_tag = "0.1.0"
