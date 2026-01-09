@@ -5,7 +5,7 @@
   <nav class="nav">
     <a href="#manifesto">Manifesto</a>
     <a href="#features">Capability</a>
-    <a href="#providers">Providers</a>
+    <a href="#formulas">Formulas</a>
     <a href="#cta">Docs</a>
     <a class="nav__cta" href="https://github.com/pepicrft/schlussel">Get Started</a>
   </nav>
@@ -28,7 +28,7 @@
     </p>
     <div class="hero__actions">
       <a class="cta" href="#manifesto">Read the manifesto</a>
-      <a class="cta cta--ghost" href="#providers">View providers</a>
+      <a class="cta cta--ghost" href="#formulas">View formulas</a>
     </div>
     </div>
     <div class="hero__panel">
@@ -99,8 +99,8 @@
         <p>No custom vaults, no bespoke encryption layers, just native, audited storage.</p>
       </article>
       <article>
-        <h3>Provider presets</h3>
-        <p>Use GitHub, Google, Microsoft, GitLab, or Tuist presets with sensible defaults for scopes and endpoints.</p>
+        <h3>Formula presets</h3>
+        <p>First-party formulas encode scopes, endpoints, and flows for common providers.</p>
         <p>Stay aligned with OAuth best practices while keeping configuration minimal.</p>
       </article>
     </div>
@@ -135,18 +135,67 @@
     </div>
   </section>
 
-  <section id="providers" class="section providers">
+  <section id="formulas" class="section formulas">
     <div class="section__title">
-      <h2>Providers</h2>
-      <p>Supported presets for fast alignment.</p>
+      <h2>Declarative formulas</h2>
+      <p>Portable OAuth recipes that live in the filesystem.</p>
     </div>
-    <ul class="providers__list">
-      <li>GitHub</li>
-      <li>Google</li>
-      <li>Microsoft</li>
-      <li>GitLab</li>
-      <li>Tuist</li>
-    </ul>
+    <div class="formulas__grid">
+      <div class="formula-card">
+        <h3>First-party formulas</h3>
+        <p>Shipped with Schlussel and compiled into the binary for zero-setup use.</p>
+        <p>Versioned alongside the library to keep behavior deterministic.</p>
+      </div>
+      <div class="formula-card">
+        <h3>Third-party formulas</h3>
+        <p>Drop a JSON file into your project or pass one at runtime.</p>
+        <p>Ideal for internal IdPs or custom OAuth deployments.</p>
+      </div>
+      <div class="formula-card">
+        <h3>Onboarding guidance</h3>
+        <p>Each formula includes steps to register a client, obtain API keys, and configure redirect URLs.</p>
+        <p>No more hunting through docs every time you add OAuth.</p>
+      </div>
+    </div>
+    <div class="formula-example">
+      <div class="formula-example__text">
+        <h3>Example formula</h3>
+        <p>Declarative fields describe flows, endpoints, scopes, and registration steps.</p>
+        <p>Quirks model provider-specific behavior without compromising the core schema.</p>
+      </div>
+      <pre><code>{
+  "id": "slack",
+  "label": "Slack",
+  "flows": ["authorization_code"],
+  "endpoints": {
+    "authorize": "https://slack.com/oauth/v2/authorize",
+    "token": "https://slack.com/api/oauth.v2.access"
+  },
+  "scopes": ["chat:write", "incoming-webhook"],
+  "onboarding": {
+    "register_url": "https://api.slack.com/apps",
+    "steps": [
+      "Create a Slack app and enable OAuth & Permissions.",
+      "Add your redirect URI.",
+      "Install the app to the workspace."
+    ]
+  },
+  "quirks": {
+    "token_response": "nested",
+    "extra_fields": ["incoming_webhook"]
+  }
+}</code></pre>
+    </div>
+    <div class="formula-inconsistencies">
+      <h3>Inconsistencies to model</h3>
+      <p>Not every provider adheres to the same OAuth surface area. Formulas capture deviations explicitly.</p>
+      <ul>
+        <li><strong>Apple</strong> uses a JWT client secret generated from a private key and team ID, with long-lived expiry.</li>
+        <li><strong>Okta</strong> requires a tenant-specific domain, so the authorize/token URLs are templated per organization.</li>
+        <li><strong>Slack</strong> has multiple install flows and scope variants, plus extra response fields like incoming webhooks.</li>
+        <li><strong>Tuist server</strong> integrates multiple OAuth providers (Apple, Okta, Slack), showing why a single schema needs explicit quirk support.</li>
+      </ul>
+    </div>
   </section>
 
   <section id="cta" class="section cta-strip">
@@ -163,5 +212,6 @@
 
 <footer class="footer">
   <p>schlussel — engineered for disciplined concurrency.</p>
+  <p>MIT License © 2025 Tuist.</p>
 </footer>
 {% include 'footer' %}

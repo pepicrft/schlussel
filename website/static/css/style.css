@@ -278,38 +278,96 @@ body {
   filter: drop-shadow(0 8px 12px rgba(0, 0, 0, 0.12));
 }
 
-.providers {
+.formulas {
   background: linear-gradient(130deg, rgba(38, 32, 28, 0.96), rgba(156, 43, 37, 0.85));
   color: var(--fog);
 }
 
-.providers__list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
+.formulas__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 1rem;
-  font-family: "IBM Plex Sans", "Helvetica Neue", sans-serif;
-  text-transform: uppercase;
-  letter-spacing: 0.18rem;
+  gap: 1.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  margin-bottom: 2.5rem;
 }
 
-.providers__list li {
-  border: 1px solid rgba(243, 235, 215, 0.6);
-  padding: 1rem;
-  text-align: center;
+.formula-card {
+  border: 1px solid rgba(243, 235, 215, 0.4);
+  padding: 1.5rem;
   background: rgba(0, 0, 0, 0.18);
+  box-shadow: 0 1rem 2rem rgba(0, 0, 0, 0.2);
+}
+
+.formula-card h3 {
+  margin: 0 0 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.18rem;
+  font-size: 0.9rem;
+}
+
+.formula-example {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  gap: 2rem;
+  align-items: start;
+  margin-bottom: 2.5rem;
+}
+
+.formula-example pre {
+  margin: 0;
+  padding: 1.4rem 1.6rem;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(243, 235, 215, 0.35);
+  overflow-x: auto;
+  color: var(--fog);
+  font-size: 0.78rem;
+  line-height: 1.6;
+}
+
+.formula-inconsistencies {
+  border: 1px solid rgba(243, 235, 215, 0.35);
+  padding: 1.6rem;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.formula-inconsistencies ul {
+  margin: 1rem 0 0;
+  padding-left: 1.2rem;
+  display: grid;
+  gap: 0.6rem;
 }
 
 .cta-strip {
+  position: relative;
+  overflow: hidden;
   display: flex;
   flex-wrap: wrap;
   gap: 2rem;
   align-items: center;
   justify-content: space-between;
-  background: var(--coal);
+  background: linear-gradient(120deg, rgba(22, 20, 18, 0.98), rgba(58, 30, 26, 0.96));
   color: var(--fog);
+  border-top: 1px solid rgba(243, 235, 215, 0.2);
+  border-bottom: 1px solid rgba(243, 235, 215, 0.2);
+}
+
+.cta-strip::before {
+  content: "";
+  position: absolute;
+  inset: -40% 10% auto auto;
+  width: 420px;
+  height: 420px;
+  background: radial-gradient(circle, rgba(156, 43, 37, 0.45), transparent 70%);
+  opacity: 0.7;
+}
+
+.cta-strip h2 {
+  font-family: "Cormorant Garamond", "Times New Roman", serif;
+  font-size: clamp(2.4rem, 4vw, 3.2rem);
+  margin-bottom: 0.8rem;
+}
+
+.cta-strip p {
+  max-width: 640px;
 }
 
 .footer {
@@ -318,6 +376,8 @@ body {
   letter-spacing: 0.18rem;
   font-size: 0.75rem;
   color: var(--muted);
+  display: grid;
+  gap: 0.6rem;
 }
 
 .site-header {
@@ -357,5 +417,11 @@ body {
   .cta-strip {
     flex-direction: column;
     align-items: flex-start;
+  }
+}
+
+@media (max-width: 960px) {
+  .formula-example {
+    grid-template-columns: 1fr;
   }
 }
