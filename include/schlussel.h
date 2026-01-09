@@ -79,6 +79,22 @@ typedef struct SchlusselClient SchlusselClient;
  */
 typedef struct SchlusselToken SchlusselToken;
 
+/**
+ * Opaque dynamic registration client handle
+ *
+ * Created by schlussel_registration_new().
+ * Must be freed with schlussel_registration_free().
+ */
+typedef struct SchlusselRegistrationClient SchlusselRegistrationClient;
+
+/**
+ * Opaque registration response handle
+ *
+ * Created by schlussel_register_client().
+ * Must be freed with schlussel_registration_response_free().
+ */
+typedef struct SchlusselRegistrationResponse SchlusselRegistrationResponse;
+
 /* ============================================================================
  * Client creation functions
  * ============================================================================ */
@@ -292,6 +308,122 @@ void schlussel_token_free(SchlusselToken* token);
  * @param str       The string to free (may be NULL)
  */
 void schlussel_string_free(char* str);
+
+/* ============================================================================
+ * Dynamic Client Registration functions
+ * ============================================================================ */
+
+/**
+ * Create a new dynamic registration client
+ *
+ * @param endpoint  Registration endpoint URL (null-terminated)
+ * @return          Registration client pointer on success, NULL on error
+ */
+SchlusselRegistrationClient* schlussel_registration_new(
+    const char* endpoint
+);
+
+/**
+ * Free a registration client
+ *
+ * @param client    The registration client to free (may be NULL)
+ */
+void schlussel_registration_free(SchlusselRegistrationClient* client);
+
+/**
+ * Register a new OAuth client with the authorization server
+ *
+ * @param reg_client                  The registration client
+ * @param redirect_uris               Array of redirect URI strings
+ * @param redirect_uris_count         Number of redirect URIs
+ * @param client_name                 Human-readable client name (may be NULL)
+ * @param grant_types                 Comma-separated grant types (may be NULL)
+ * @param response_types              Comma-separated response types (may be NULL)
+ * @param scope                       OAuth scope (may be NULL)
+ * @param token_auth_method           Token endpoint auth method (may be NULL)
+ * @return                            Registration response on success, NULL on error
+ */
+SchlusselRegistrationResponse* schlussel_register_client(
+    SchlusselRegistrationClient* reg_client,
+    const char** redirect_uris,
+    size_t redirect_uris_count,
+    const char* client_name,
+    const char* grant_types,
+    const char* response_types,
+    const char* scope,
+    const char* token_auth_method
+);
+
+/**
+ * Free a registration response
+ *
+ * @param response  The registration response to free (may be NULL)
+ */
+void schlussel_registration_response_free(SchlusselRegistrationResponse* response);
+
+/**
+ * Get the client ID from a registration response
+ *
+ * @param response  The registration response
+ * @return          Newly allocated string, or NULL on error
+ *                  Must be freed with schlussel_string_free()
+ */
+char* schlussel_registration_response_get_client_id(
+    SchlusselRegistrationResponse* response
+);
+
+/**
+ * Get the client secret from a registration response
+ *
+ * @param response  The registration response
+ * @return          Newly allocated string, or NULL if not present
+ *                  Must be freed with schlussel_string_free()
+ */
+char* schlussel_registration_response_get_client_secret(
+    SchlusselRegistrationResponse* response
+);
+
+/**
+ * Get the client ID issued at timestamp
+ *
+ * @param response  The registration response
+ * @return          Unix timestamp (seconds), or 0 if not set
+ */
+int64_t schlussel_registration_response_get_client_id_issued_at(
+    SchlusselRegistrationResponse* response
+);
+
+/**
+ * Get the client secret expires at timestamp
+ *
+ * @param response  The registration response
+ * @return          Unix timestamp (seconds), or 0 if never expires
+ */
+int64_t schlussel_registration_response_get_client_secret_expires_at(
+    SchlusselRegistrationResponse* response
+);
+
+/**
+ * Get the registration access token
+ *
+ * @param response  The registration response
+ * @return          Newly allocated string, or NULL if not present
+ *                  Must be freed with schlussel_string_free()
+ */
+char* schlussel_registration_response_get_registration_access_token(
+    SchlusselRegistrationResponse* response
+);
+
+/**
+ * Get the registration client URI
+ *
+ * @param response  The registration response
+ * @return          Newly allocated string, or NULL if not present
+ *                  Must be freed with schlussel_string_free()
+ */
+char* schlussel_registration_response_get_registration_client_uri(
+    SchlusselRegistrationResponse* response
+);
 
 #ifdef __cplusplus
 }
