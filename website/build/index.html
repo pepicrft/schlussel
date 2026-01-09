@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>schlussel - schlussel</title>
+    <meta name="description" content="Platform-agnostic session management for concurrent agents">
+    <link rel="canonical" href="http://localhost:3000">
+    <meta property="og:title" content="schlussel">
+    <meta property="og:description" content="Platform-agnostic session management for concurrent agents">
+    <meta property="og:url" content="http://localhost:3000">
+    <meta property="og:type" content="website">
+    <link rel="stylesheet" href="/css/style.css">
+  </head>
+  <body>
+
+<div class="grain" aria-hidden="true"></div>
+<header class="topbar">
+  <div class="brand">schlussel 🔑</div>
+  <nav class="nav">
+    <a href="#manifesto">Manifesto</a>
+    <a href="#features">Capability</a>
+    <a href="#providers">Providers</a>
+    <a href="#cta">Docs</a>
+    <a class="nav__cta" href="https://github.com/pepicrft/schlussel">Get Started</a>
+  </nav>
+</header>
+
+<main>
+  <section class="hero">
+    <div class="hero__orb" aria-hidden="true"></div>
+    <div class="hero__content">
+    <p class="hero__eyebrow">Secure OAuth 2.0 for command-line tools</p>
+    <h1>
+        Schlussel is an
+        <span>OAuth 2.0</span>
+        library + CLI
+    </h1>
+    <p class="hero__lead">
+      Built in Zig, it handles PKCE and device code flows with OS-native token
+      storage and cross-process safety, so CLI tools can prevent race conditions
+      from invalidating shared tokens.
+    </p>
+    <div class="hero__actions">
+      <a class="cta" href="#manifesto">Read the manifesto</a>
+      <a class="cta cta--ghost" href="#providers">View providers</a>
+    </div>
+    </div>
+    <div class="hero__panel">
+      <div class="panel__label">Controlled refresh</div>
+      <div class="panel__line"></div>
+      <div class="panel__label">Unified storage</div>
+      <div class="panel__line"></div>
+      <div class="panel__label">Cross-process safe</div>
+    </div>
+  </section>
+
+  <section id="manifesto" class="section manifesto">
+    <div class="section__title">
+      <h2>Unified sessions, zero confusion</h2>
+      <p>One key. Many doors. No dropped locks.</p>
+    </div>
+    <div class="section__body">
+      <p>
+        In a world of concurrent agents, a single device is no longer the
+        boundary. Processes race, refresh tokens collide, and fragmented session
+        stores turn into silent failures. A unified, platform-agnostic session
+        layer eliminates that chaos by giving every agent a common language for
+        locking, refreshing, and sharing credentials.
+      </p>
+      <p>
+        When sessions are consistent across macOS, Linux, and Windows, you get
+        deterministic behavior: the same refresh rules, the same storage
+        guarantees, and the same concurrency safety everywhere. That means fewer
+        split-brain tokens, fewer stale sessions, and a resilient backbone for
+        distributed automation.
+      </p>
+    </div>
+  </section>
+
+  <section class="section about">
+    <div class="section__title">
+      <h2>What Schlussel is</h2>
+      <p>Library + CLI, built in Zig.</p>
+    </div>
+    <div class="section__body">
+      <p>
+        Schlussel provides a cross-platform OAuth 2.0 client with PKCE and device
+        code flow support, designed for CLI applications that need secure token
+        storage and consistent behavior across operating systems.
+      </p>
+      <p>
+        Use it as a Zig library or as a CLI tool to drive authorization flows,
+        store tokens in OS credential managers, and refresh them safely under
+        concurrency.
+      </p>
+    </div>
+  </section>
+
+  <section id="features" class="section features">
+    <div class="section__title">
+      <h2>Built for the agentic era</h2>
+      <p>Minimal surface area. Maximum discipline. No surprises.</p>
+    </div>
+    <div class="features__grid">
+      <article>
+        <h3>Cross-process safe</h3>
+        <p>Token refreshes are serialized across processes, so concurrent agents never race to overwrite or invalidate the same credentials.</p>
+        <p>Locks are scoped per key, keeping throughput high while guaranteeing a single source of truth.</p>
+      </article>
+      <article>
+        <h3>OS-native storage</h3>
+        <p>Store tokens in Keychain, Credential Manager, or libsecret, matching the platform’s security model and user expectations.</p>
+        <p>No custom vaults, no bespoke encryption layers, just native, audited storage.</p>
+      </article>
+      <article>
+        <h3>Provider presets</h3>
+        <p>Use GitHub, Google, Microsoft, GitLab, or Tuist presets with sensible defaults for scopes and endpoints.</p>
+        <p>Stay aligned with OAuth best practices while keeping configuration minimal.</p>
+      </article>
+    </div>
+  </section>
+
+  <section id="bindings" class="section bindings">
+    <div class="section__title">
+      <h2>Bindings</h2>
+      <p>Ship Schlussel across runtimes.</p>
+    </div>
+    <div class="bindings__grid">
+      <div class="binding-card">
+        <img src="/img/webassembly.svg" alt="WebAssembly logo" />
+        <span>Browser (Wasm)</span>
+      </div>
+      <div class="binding-card">
+        <img src="/img/python.svg" alt="Python logo" />
+        <span>Python</span>
+      </div>
+      <div class="binding-card">
+        <img src="/img/ruby.svg" alt="Ruby logo" />
+        <span>Ruby</span>
+      </div>
+      <div class="binding-card">
+        <img src="/img/elixir.svg" alt="Elixir logo" />
+        <span>Elixir</span>
+      </div>
+      <div class="binding-card">
+        <img src="/img/swift.svg" alt="Swift logo" />
+        <span>Swift</span>
+      </div>
+    </div>
+  </section>
+
+  <section id="providers" class="section providers">
+    <div class="section__title">
+      <h2>Providers</h2>
+      <p>Supported presets for fast alignment.</p>
+    </div>
+    <ul class="providers__list">
+      <li>GitHub</li>
+      <li>Google</li>
+      <li>Microsoft</li>
+      <li>GitLab</li>
+      <li>Tuist</li>
+    </ul>
+  </section>
+
+  <section id="cta" class="section cta-strip">
+    <div>
+      <h2>Make sessions the backbone</h2>
+      <p>
+        Schlussel is the shared key for agent swarms, CI fleets, and teams
+        building across platforms. Stop rewriting the handshake.
+      </p>
+    </div>
+    <a class="cta" href="https://github.com/pepicrft/schlussel">View on GitHub</a>
+  </section>
+</main>
+
+<footer class="footer">
+  <p>schlussel — engineered for disciplined concurrency.</p>
+</footer>
+  </body>
+</html>
+

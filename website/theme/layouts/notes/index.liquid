@@ -1,0 +1,15 @@
+{% include 'head' %}
+{% include 'header' %}
+<main>
+  <h1>Notes</h1>
+  {% for note in notes %}
+  <article>
+    <time datetime="{{ note.date }}">{{ note.date }}</time>
+    <div>{{ note.html_content }}</div>
+  </article>
+  {% endfor %}
+  {% if notes == empty %}
+  <p>No notes yet.</p>
+  {% endif %}
+</main>
+{% include 'footer' %}

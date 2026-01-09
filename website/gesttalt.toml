@@ -1,0 +1,5 @@
+# Site configuration
+title = "schlussel"
+description = "Platform-agnostic session management for concurrent agents"
+base_url = "http://localhost:4321"
+language = "en"

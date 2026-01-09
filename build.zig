@@ -81,6 +81,20 @@ pub fn build(b: *std.Build) void {
     const run_auto_refresh_step = b.step("example-auto-refresh", "Run the automatic refresh example");
     run_auto_refresh_step.dependOn(&run_auto_refresh.step);
 
+    // CLI executable
+    const cli_exe = b.addExecutable(.{
+        .name = "schlussel",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/cli.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "schlussel", .module = lib_mod },
+            },
+        }),
+    });
+    b.installArtifact(cli_exe);
+
     // Docs generation
     const docs_mod = b.createModule(.{
         .root_source_file = b.path("src/lib.zig"),
