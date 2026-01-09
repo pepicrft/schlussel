@@ -22,11 +22,13 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const oauth = @import("oauth.zig");
 const session = @import("session.zig");
+const registration = @import("registration.zig");
 
 const Command = enum {
     device,
     code,
     token,
+    register,
     help,
 
     pub fn fromString(str: []const u8) ?Command {
@@ -34,6 +36,7 @@ const Command = enum {
         if (eql(u8, str, "device")) return .device;
         if (eql(u8, str, "code")) return .code;
         if (eql(u8, str, "token")) return .token;
+        if (eql(u8, str, "register")) return .register;
         if (eql(u8, str, "help")) return .help;
         return null;
     }
@@ -74,6 +77,7 @@ pub fn main() !void {
         .device => try cmdDevice(allocator, args, stdout, stderr),
         .code => try cmdCode(allocator, args, stdout, stderr),
         .token => try cmdToken(allocator, args, stdout, stderr),
+        .register => try cmdRegister(allocator, args, stdout, stderr),
         .help => {}, // already handled
     }
 }
@@ -89,6 +93,7 @@ fn printUsage(writer: anytype) !void {
         \\    device              Device Code Flow authentication
         \\    code                Authorization Code Flow with PKCE
         \\    token <action>      Token management operations
+        \\    register            Dynamically register OAuth client
         \\    help                Show this help message
         \\
         \\TOKEN ACTIONS:
@@ -100,15 +105,11 @@ fn printUsage(writer: anytype) !void {
         \\    # Device Code Flow with GitHub
         \\    schlussel device github --client-id <id> --scope "repo user"
         \\
-        \\    # Device Code Flow with custom provider
-        \\    schlussel device --custom-provider \
-        \\      --device-code-endpoint https://auth.example.com/oauth/device/code \
-        \\      --token-endpoint https://auth.example.com/oauth/token \
-        \\      --client-id <id> \
-        \\      --scope "read write"
-        \\
-        \\    # Get stored token
-        \\    schlussel token get --key github_token
+        \\    # Register a new OAuth client
+        \\    schlussel register https://auth.example.com/register \
+        \\      --client-name "My App" \
+        \\      --redirect-uri https://example.com/callback \
+        \\      --grant-types authorization_code,refresh_token
         \\
         \\For more help, visit: https://github.com/pepicrft/schlussel
         \\
@@ -331,4 +332,160 @@ fn createPresetConfig(provider: []const u8, client_id: []const u8, scope: []cons
     } else {
         return error.UnknownProvider;
     }
+}
+
+fn cmdRegister(allocator: Allocator, args: []const []const u8, stdout: anytype, stderr: anytype) !void {
+    if (args.len < 3) {
+        try stderr.print("Error: Missing registration endpoint URL\n\n", .{});
+        try stderr.print("USAGE:\n    schlussel register <endpoint-url> [options]\n\n", .{});
+        try stderr.print("OPTIONS:\n", .{});
+        try stderr.print("    --client-name <name>              Human-readable client name\n", .{});
+        try stderr.print("    --redirect-uri <uri>              Redirection URI (can be specified multiple times)\n", .{});
+        try stderr.print("    --grant-types <types>             Comma-separated grant types\n", .{});
+        try stderr.print("    --response-types <types>          Comma-separated response types\n", .{});
+        try stderr.print("    --scope <scope>                   OAuth scope\n", .{});
+        try stderr.print("    --token-auth-method <method>      Token endpoint auth method\n", .{});
+        return error.MissingArguments;
+    }
+
+    const endpoint = args[2];
+
+    // Parse options
+    var client_name: ?[]const u8 = null;
+    var redirect_uris_list: std.ArrayList([]const u8) = .empty;
+    defer {
+        for (redirect_uris_list.items) |uri| allocator.free(uri);
+        redirect_uris_list.deinit(allocator);
+    }
+
+    var grant_types_str: ?[]const u8 = null;
+    var response_types_str: ?[]const u8 = null;
+    var scope: ?[]const u8 = null;
+    var token_auth_method: ?[]const u8 = null;
+
+    var i: usize = 3;
+    while (i < args.len) : (i += 1) {
+        const arg = args[i];
+        if (i + 1 >= args.len) {
+            try stderr.print("Error: Missing value for option '{s}'\n", .{arg});
+            return error.MissingOptionValue;
+        }
+
+        if (std.mem.eql(u8, arg, "--client-name")) {
+            client_name = args[i + 1];
+            i += 1;
+        } else if (std.mem.eql(u8, arg, "--redirect-uri")) {
+            try redirect_uris_list.append(allocator, try allocator.dupe(u8, args[i + 1]));
+            i += 1;
+        } else if (std.mem.eql(u8, arg, "--grant-types")) {
+            grant_types_str = args[i + 1];
+            i += 1;
+        } else if (std.mem.eql(u8, arg, "--response-types")) {
+            response_types_str = args[i + 1];
+            i += 1;
+        } else if (std.mem.eql(u8, arg, "--scope")) {
+            scope = args[i + 1];
+            i += 1;
+        } else if (std.mem.eql(u8, arg, "--token-auth-method")) {
+            token_auth_method = args[i + 1];
+            i += 1;
+        } else {
+            try stderr.print("Error: Unknown option '{s}'\n", .{arg});
+            return error.UnknownOption;
+        }
+    }
+
+    if (redirect_uris_list.items.len == 0) {
+        try stderr.print("Error: At least one --redirect-uri is required\n", .{});
+        return error.MissingRequiredOptions;
+    }
+
+    // Create client metadata
+    var metadata = try registration.ClientMetadata.init(allocator);
+    defer metadata.deinit();
+
+    if (client_name) |name| metadata.client_name = name;
+    metadata.redirect_uris = redirect_uris_list.items;
+
+    // Parse comma-separated grant types
+    if (grant_types_str) |types| {
+        var types_list: std.ArrayList([]const u8) = .empty;
+        defer {
+            for (types_list.items) |t| allocator.free(t);
+            types_list.deinit(allocator);
+        }
+
+        var iter = std.mem.splitScalar(u8, types, ',');
+        while (iter.next()) |t| {
+            const trimmed = std.mem.trim(u8, t, " ");
+            if (trimmed.len > 0) {
+                try types_list.append(allocator, try allocator.dupe(u8, trimmed));
+            }
+        }
+        metadata.grant_types = types_list.items;
+    }
+
+    // Parse comma-separated response types
+    if (response_types_str) |types| {
+        var types_list: std.ArrayList([]const u8) = .empty;
+        defer {
+            for (types_list.items) |t| allocator.free(t);
+            types_list.deinit(allocator);
+        }
+
+        var iter = std.mem.splitScalar(u8, types, ',');
+        while (iter.next()) |t| {
+            const trimmed = std.mem.trim(u8, t, " ");
+            if (trimmed.len > 0) {
+                try types_list.append(allocator, try allocator.dupe(u8, trimmed));
+            }
+        }
+        metadata.response_types = types_list.items;
+    }
+
+    if (scope) |s| metadata.scope = s;
+    if (token_auth_method) |m| metadata.token_endpoint_auth_method = m;
+
+    // Create registration client
+    var reg_client = try registration.DynamicRegistration.init(allocator, endpoint);
+    defer reg_client.deinit();
+
+    try stdout.print("\n=== Dynamic Client Registration ===\n\n", .{});
+    try stdout.print("Registering client with: {s}\n\n", .{endpoint});
+
+    // Register the client
+    var response = reg_client.register(metadata) catch |err| {
+        try stderr.print("\nRegistration failed: {s}\n", .{@errorName(err)});
+        return err;
+    };
+    defer response.deinit();
+
+    try stdout.print("=== Registration Successful! ===\n\n", .{});
+    try stdout.print("Client ID: {s}\n", .{response.client_id});
+
+    if (response.client_secret) |secret| {
+        try stdout.print("Client Secret: {s}\n", .{secret});
+        try stdout.print("\nWARNING: Store this secret securely! It will not be shown again.\n", .{});
+    }
+
+    if (response.client_id_issued_at) |issued_at| {
+        try stdout.print("Issued At: {d}\n", .{issued_at});
+    }
+
+    if (response.client_secret_expires_at) |expires_at| {
+        try stdout.print("Secret Expires At: {d}\n", .{expires_at});
+    }
+
+    if (response.registration_client_uri) |uri| {
+        try stdout.print("Registration URI: {s}\n", .{uri});
+    }
+
+    try stdout.print("\nYou can now use this client ID with Schlussel:\n", .{});
+    try stdout.print("  schlussel device --custom-provider \\", .{});
+    try stdout.print("\n    --token-endpoint <token-endpoint> \\", .{});
+    try stdout.print("\n    --client-id {s} \\", .{response.client_id});
+    if (response.client_secret) |secret| {
+        try stdout.print("\n    --client-secret {s}", .{secret});
+    }
+    try stdout.print("\n", .{});
 }

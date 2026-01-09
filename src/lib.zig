@@ -9,6 +9,7 @@
 //! - **PKCE Support**: RFC 7636 compliant Proof Key for Code Exchange
 //! - **Device Code Flow**: RFC 8628 compliant for headless/CLI applications
 //! - **Authorization Code Flow**: Standard OAuth 2.0 with local callback server
+//! - **Dynamic Client Registration**: RFC 7591 compliant dynamic registration
 //! - **Secure Storage**: OS-native credential managers (Keychain, Credential Manager, Secret Service)
 //! - **Token Refresh**: Automatic token refresh with cross-process locking
 //! - **Provider Presets**: One-line configuration for popular OAuth providers
@@ -39,6 +40,7 @@ pub const error_types = @import("error.zig");
 pub const oauth = @import("oauth.zig");
 pub const callback = @import("callback.zig");
 pub const lock = @import("lock.zig");
+pub const registration = @import("registration.zig");
 
 // Re-export commonly used types for convenience
 pub const Pkce = pkce.Pkce;
@@ -58,6 +60,9 @@ pub const CallbackServer = callback.CallbackServer;
 pub const CallbackResult = callback.CallbackResult;
 pub const RefreshLockManager = lock.RefreshLockManager;
 pub const RefreshLock = lock.RefreshLock;
+pub const DynamicRegistration = registration.DynamicRegistration;
+pub const ClientMetadata = registration.ClientMetadata;
+pub const ClientRegistrationResponse = registration.ClientRegistrationResponse;
 
 // FFI exports (only when building as library)
 pub const ffi = @import("ffi.zig");
