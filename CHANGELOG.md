@@ -2,6 +2,13 @@
 
 ### Feat
 
+- Expose Dynamic Client Registration in C FFI layer by [@pepicrft](https://github.com/pepicrft)
+
+
+**Full Changelog**: https://github.com/pepicrft/schlussel/compare/0.7.0..0.8.0
+
+### Feat
+
 - Add OAuth 2.0 Dynamic Client Registration (RFC 7591) by [@pepicrft](https://github.com/pepicrft)
 - Add CLI tool for Schlussel OAuth operations by [@pepicrft](https://github.com/pepicrft)
 
