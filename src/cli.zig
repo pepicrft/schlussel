@@ -23,6 +23,7 @@ const Allocator = std.mem.Allocator;
 const oauth = @import("oauth.zig");
 const session = @import("session.zig");
 const registration = @import("registration.zig");
+const formulas = @import("formulas.zig");
 
 const Command = enum {
     device,
@@ -105,6 +106,9 @@ fn printUsage(writer: anytype) !void {
         \\    # Device Code Flow with GitHub
         \\    schlussel device github --client-id <id> --scope "repo user"
         \\
+        \\    # Device Code Flow with a formula JSON
+        \\    schlussel device slack --formula-json ~/formulas/slack.json --client-id <id>
+        \\
         \\    # Register a new OAuth client
         \\    schlussel register https://auth.example.com/register \
         \\      --client-name "My App" \
@@ -125,6 +129,7 @@ fn cmdDevice(allocator: Allocator, args: []const []const u8, stdout: anytype, st
         try stderr.print("    --client-id <id>              OAuth client ID (required)\n", .{});
         try stderr.print("    --client-secret <secret>      OAuth client secret (optional)\n", .{});
         try stderr.print("    --scope <scopes>              OAuth scopes (space-separated)\n", .{});
+        try stderr.print("    --formula-json <path>         Load a declarative formula JSON\n", .{});
         try stderr.print("\n", .{});
         try stderr.print("CUSTOM PROVIDER OPTIONS:\n", .{});
         try stderr.print("    --device-code-endpoint <url>  Device authorization endpoint\n", .{});
@@ -134,11 +139,12 @@ fn cmdDevice(allocator: Allocator, args: []const []const u8, stdout: anytype, st
         return error.MissingArguments;
     }
 
-    // args[0] = program name, args[1] = "device", args[2] = provider or --custom-provider
     const provider_arg = args[2];
     const is_custom = std.mem.eql(u8, provider_arg, "--custom-provider");
 
-    var config: ?oauth.OAuthConfig = null;
+    var config: oauth.OAuthConfig = undefined;
+    var thirdPartyFormula: ?formulas.FormulaOwned = null;
+    defer if (thirdPartyFormula) |owner| owner.deinit();
 
     if (is_custom) {
         // Parse custom provider options
@@ -190,7 +196,6 @@ fn cmdDevice(allocator: Allocator, args: []const []const u8, stdout: anytype, st
             return error.MissingRequiredOptions;
         }
 
-        // Create owned config with allocator
         var owned_config = oauth.OAuthConfigOwned{
             .allocator = allocator,
             .client_id = try allocator.dupe(u8, client_id.?),
@@ -205,9 +210,11 @@ fn cmdDevice(allocator: Allocator, args: []const []const u8, stdout: anytype, st
 
         config = owned_config.toConfig();
     } else {
-        // Use preset provider
         var client_id: ?[]const u8 = null;
-        var scope: ?[]const u8 = "repo user";
+        var scope: ?[]const u8 = null;
+        var redirect_uri: ?[]const u8 = null;
+        var client_secret: ?[]const u8 = null;
+        var formula_json_path: ?[]const u8 = null;
 
         var i: usize = 3;
         while (i < args.len) : (i += 1) {
@@ -223,6 +230,15 @@ fn cmdDevice(allocator: Allocator, args: []const []const u8, stdout: anytype, st
             } else if (std.mem.eql(u8, arg, "--scope")) {
                 scope = args[i + 1];
                 i += 1;
+            } else if (std.mem.eql(u8, arg, "--redirect-uri")) {
+                redirect_uri = args[i + 1];
+                i += 1;
+            } else if (std.mem.eql(u8, arg, "--client-secret")) {
+                client_secret = args[i + 1];
+                i += 1;
+            } else if (std.mem.eql(u8, arg, "--formula-json")) {
+                formula_json_path = args[i + 1];
+                i += 1;
             } else {
                 try stderr.print("Error: Unknown option '{s}'\n", .{arg});
                 return error.UnknownOption;
@@ -234,8 +250,39 @@ fn cmdDevice(allocator: Allocator, args: []const []const u8, stdout: anytype, st
             return error.MissingRequiredOptions;
         }
 
-        // Create config based on provider name
-        config = try createPresetConfig(provider_arg, client_id.?, scope.?);
+        if (formula_json_path) {
+            thirdPartyFormula = try formulas.FormulaOwned.loadFromPath(allocator, formula_json_path.?);
+        }
+
+        var formula_ptr: ?*const formulas.Formula = null;
+        if (thirdPartyFormula) |owner| {
+            if (!std.mem.eql(u8, owner.formula.id, provider_arg)) {
+                try stderr.print(
+                    "Warning: formula id '{s}' does not match provider '{s}'\n",
+                    .{ owner.formula.id, provider_arg },
+                );
+            }
+            formula_ptr = owner.asConst();
+        } else {
+            formula_ptr = formulas.findById(provider_arg);
+        }
+
+        if (formula_ptr) |formula| {
+            const redirect = redirect_uri orelse "http://127.0.0.1/callback";
+            var owned_config = try oauth.configFromFormula(
+                allocator,
+                formula,
+                client_id.?,
+                client_secret,
+                redirect,
+                scope,
+            );
+            defer owned_config.deinit();
+            config = owned_config.toConfig();
+        } else {
+            const preset_scope = scope orelse "repo user";
+            config = try createPresetConfig(provider_arg, client_id.?, preset_scope);
+        }
     }
 
     // Create storage (default to file storage)
@@ -243,7 +290,7 @@ fn cmdDevice(allocator: Allocator, args: []const []const u8, stdout: anytype, st
     defer storage.deinit();
 
     // Create OAuth client
-    var client = oauth.OAuthClient.init(allocator, config.?, storage.storage());
+    var client = oauth.OAuthClient.init(allocator, config, storage.storage());
     defer client.deinit();
 
     try stdout.print("\n=== Device Code Flow Authentication ===\n\n", .{});

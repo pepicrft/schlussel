@@ -29,6 +29,7 @@ const pkce = @import("pkce.zig");
 const session = @import("session.zig");
 const callback = @import("callback.zig");
 const lock = @import("lock.zig");
+const formulas = @import("formulas.zig");
 
 const Token = session.Token;
 const SessionStorage = session.SessionStorage;
@@ -274,6 +275,27 @@ pub const OAuthConfigOwned = struct {
         };
     }
 };
+
+pub fn configFromFormula(
+    allocator: Allocator,
+    formula: *const formulas.Formula,
+    client_id: []const u8,
+    client_secret: ?[]const u8,
+    redirect_uri: []const u8,
+    scope_override: ?[]const u8,
+) !OAuthConfigOwned {
+    const scope_value = if (scope_override) |s| s else formula.scope;
+    return OAuthConfigOwned{
+        .allocator = allocator,
+        .client_id = try allocator.dupe(u8, client_id),
+        .client_secret = if (client_secret) |s| try allocator.dupe(u8, s) else null,
+        .authorization_endpoint = try allocator.dupe(u8, formula.authorization_endpoint),
+        .token_endpoint = try allocator.dupe(u8, formula.token_endpoint),
+        .redirect_uri = try allocator.dupe(u8, redirect_uri),
+        .scope = if (scope_value) |s| try allocator.dupe(u8, s) else null,
+        .device_authorization_endpoint = if (formula.device_authorization_endpoint) |e| try allocator.dupe(u8, e) else null,
+    };
+}
 
 /// Validate that an endpoint URL uses HTTPS (or is localhost for development)
 fn validateEndpointSecurity(url: []const u8) !void {
