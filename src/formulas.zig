@@ -136,6 +136,42 @@ const builtinFormulas = [_]Formula{
             .extra_response_fields = &_SlackExtraFields,
         },
     },
+    .{
+        .id = "claude",
+        .label = "Claude Code",
+        .flows = &_ClaudeFlows,
+        .authorization_endpoint = "https://claude.ai/oauth/authorize",
+        .token_endpoint = "https://console.anthropic.com/v1/oauth/token",
+        .device_authorization_endpoint = null,
+        .scope = "user:profile user:inference user:sessions:claude_code org:create_api_key",
+        .onboarding = Onboarding{
+            .register_url = "https://console.anthropic.com/oauth/clients",
+            .steps = &_ClaudeSteps,
+        },
+        .quirks = Quirks{
+            .dynamic_registration_endpoint = "https://api.anthropic.com/api/oauth/claude_cli/create_api_key",
+            .token_response = null,
+            .extra_response_fields = &_ClaudeExtraFields,
+        },
+    },
+    .{
+        .id = "codex",
+        .label = "Codex CLI (OpenAI)",
+        .flows = &_CodexFlows,
+        .authorization_endpoint = "https://auth.openai.com/oauth/authorize",
+        .token_endpoint = "https://auth.openai.com/oauth/token",
+        .device_authorization_endpoint = null,
+        .scope = "codex:read codex:write code:cli",
+        .onboarding = Onboarding{
+            .register_url = "https://platform.openai.com/account/api-keys",
+            .steps = &_CodexSteps,
+        },
+        .quirks = Quirks{
+            .dynamic_registration_endpoint = null,
+            .token_response = null,
+            .extra_response_fields = &_CodexExtraFields,
+        },
+    },
 };
 
 const _GitHubFlows = [_]Flow{ .authorization_code, .device_code };
@@ -144,42 +180,55 @@ const _MicrosoftFlows = [_]Flow{ .authorization_code, .device_code };
 const _GitLabFlows = [_]Flow{.authorization_code};
 const _TuistFlows = [_]Flow{ .authorization_code, .device_code };
 const _SlackFlows = [_]Flow{.authorization_code};
+const _ClaudeFlows = [_]Flow{.authorization_code};
+const _CodexFlows = [_]Flow{.authorization_code};
 
-const _ConciseSteps = [_][]const u8;
-
-const _GitHubSteps = &_ConciseSteps{
+const _GitHubSteps = &[_][]const u8{
     "Create a new OAuth app under your organization.",
     "Set the callback URL to http://127.0.0.1/callback.",
     "Copy the client ID/secret into your configuration.",
 };
-const _GoogleSteps = &_ConciseSteps{
+const _GoogleSteps = &[_][]const u8{
     "Create OAuth credentials for your application.",
     "Add http://127.0.0.1/callback as an authorized redirect URI.",
     "Enable the necessary Google APIs.",
 };
-const _MicrosoftSteps = &_ConciseSteps{
+const _MicrosoftSteps = &[_][]const u8{
     "Register your CLI as a multi-tenant application in Microsoft Entra.",
     "Add http://127.0.0.1/callback to the redirect URIs.",
     "Grant Graph scopes or other required APIs.",
 };
-const _GitLabSteps = &_ConciseSteps{
+const _GitLabSteps = &[_][]const u8{
     "Create a new application for your CLI.",
     "Provide a redirect URI such as http://127.0.0.1/callback.",
     "Keep the client secret encrypted and rotate when needed.",
 };
-const _TuistSteps = &_ConciseSteps{
+const _TuistSteps = &[_][]const u8{
     "Create an OAuth client in Tuist Cloud workspace settings.",
     "Set the redirect URI that matches your CLI callback.",
     "Register the scopes your workflows require and copy credentials.",
 };
-const _SlackSteps = &_ConciseSteps{
+const _SlackSteps = &[_][]const u8{
     "Create a Slack app and enable OAuth & Permissions.",
     "Add your redirect URI and install the app.",
     "Copy the client ID and secret into Schlussel.",
 };
 
-const _TuistExtraFields = &_ConciseSteps{"project_id"};
-const _SlackExtraFields = &_ConciseSteps{"incoming_webhook"};
+const _ClaudeSteps = &[_][]const u8{
+    "Log into the Claude Console and register a Claude Code CLI client.",
+    "Add Schlussel's callback (e.g., schlussel://oauth-callback or http://127.0.0.1/callback) and grant the CLI scopes.",
+    "Use the console's CLI API key page to mint credentials and drop them into your config.",
+};
+const _CodexSteps = &[_][]const u8{
+    "Create an OAuth app in the OpenAI platform and copy the published client ID/secret.",
+    "Set the redirect URI to your CLI callback and enable codex/code scopes.",
+    "Store the secrets in Schlussel and rotate them through the OpenAI dashboard when needed.",
+};
+
+const _TuistExtraFields = &[_][]const u8{"project_id"};
+const _SlackExtraFields = &[_][]const u8{"incoming_webhook"};
+const _ClaudeExtraFields = &[_][]const u8{"roles"};
+const _CodexExtraFields = &[_][]const u8{"model"};
 
 pub fn findById(id: []const u8) ?*const Formula {
     for (builtinFormulas) |formula| {
@@ -265,7 +314,7 @@ pub fn loadFromPath(allocator: Allocator, path: []const u8) !FormulaOwned {
     const file = try std.fs.cwd().openFile(path, .{ .read = true });
     defer file.close();
 
-    var buffer = try file.readToEndAlloc(allocator, 4096);
+    const buffer = try file.readToEndAlloc(allocator, 4096);
     errdefer allocator.free(buffer);
 
     var parsed = try json.parseFromSlice(json.Value, allocator, buffer, .{ .allocate = .alloc_always });
