@@ -33,3 +33,5 @@ Thumbs.db
 # Mise
 .mise.lock
 
+
+website/build/

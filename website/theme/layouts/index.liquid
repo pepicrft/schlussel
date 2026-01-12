@@ -2,13 +2,15 @@
 <div class="grain" aria-hidden="true"></div>
 <header class="topbar">
   <div class="brand">🔑 schlussel</div>
-  <nav class="nav">
+  <button class="nav__toggle" aria-expanded="false" aria-label="Toggle navigation">☰</button>
+  <nav class="nav" id="primary-nav">
     <a href="#manifesto">Manifesto</a>
     <a href="#capabilities">Capabilities</a>
-    <a href="#bindings">Bindings</a>
+    <a href="#getting-started">Getting started</a>
     <a href="#formulas">Formulas</a>
-    <a href="#license">License</a>
-    <a class="nav__cta" href="https://github.com/pepicrft/schlussel">Get Started</a>
+    <a href="#bindings">Bindings</a>
+    <a href="/notes/">Notes</a>
+    <a class="nav__cta" href="https://github.com/pepicrft/schlussel">Get started</a>
   </nav>
 </header>
 
@@ -16,31 +18,19 @@
   <section class="hero">
     <div class="hero__orb" aria-hidden="true"></div>
     <div class="hero__content">
-      <p class="hero__eyebrow">Session coherence for concurrent agents</p>
-      <h1>Engineered for deterministic coordination</h1>
+      <p class="hero__eyebrow">Universal OAuth2 client for concurrent agents</p>
+      <h1>Deterministic coordination across every platform</h1>
       <p class="hero__lead">
-        Schlussel is the OAuth 2.0 library + CLI written in Zig that keeps CLI
-        agents from undoing each other. Unified locking, PKCE, and device-code
+        Universal, cross-platform OAuth 2.0 client—library + CLI—written in Zig
+        to keep agents from undoing each other. Unified locking, PKCE, and device-code
         flows with OS-native token storage keep every refresh serialized across
         macOS, Linux, and Windows so agents can swarm without invalidating
         shared tokens.
       </p>
-      <ul class="hero__points">
-        <li><strong>Library + CLI</strong> for OAuth2 clients and automation.</li>
-        <li><strong>Cross-platform</strong> session stores and locking.</li>
-        <li><strong>Agentic era ready</strong> with deterministic refreshes.</li>
-      </ul>
       <div class="hero__actions">
         <a class="cta" href="#manifesto">Read the manifesto</a>
         <a class="cta cta--ghost" href="#formulas">Inspect formulas</a>
       </div>
-    </div>
-    <div class="hero__panel">
-      <div class="panel__label">OAuth2 library + CLI bundle</div>
-      <div class="panel__line"></div>
-      <div class="panel__label">PKCE, device & refresh flows</div>
-      <div class="panel__line"></div>
-      <div class="panel__label">Deterministic locking</div>
     </div>
   </section>
 
@@ -91,6 +81,30 @@
     </div>
   </section>
 
+  <section id="getting-started" class="section getting-started">
+    <div class="section__title">
+      <h2>Getting started</h2>
+      <p>Pick your way to consume Schlussel across CLIs, libraries, and bindings.</p>
+    </div>
+    <div class="gs__grid">
+      <article>
+        <h3>Install CLI</h3>
+        <p>Bring the CLI to your agent fleet for device and authorization-code flows.</p>
+        <p class="gs__note">Clone, build with Zig, run <code>schlussel login &lt;provider&gt;</code>, and tokens land in the OS credential manager with locking to avoid dueling refreshes.</p>
+      </article>
+      <article>
+        <h3>Use the Zig library</h3>
+        <p>Embed the library and reuse the same formulas and storage backends.</p>
+        <p class="gs__note">Add the dependency in <code>build.zig.zon</code>, import <code>schlussel</code>, and use the same <code>OAuthConfig</code> helpers; refresh orchestration and locks mirror the CLI behavior.</p>
+      </article>
+      <article>
+        <h3>Use bindings</h3>
+        <p>Choose the binding that fits your runtime and keep recipes in sync.</p>
+        <p class="gs__note">Bindings for Wasm, Python, Ruby, Elixir, Swift (and more) reuse the same formulas, scopes, and locking model.</p>
+      </article>
+    </div>
+  </section>
+
   <section id="bindings" class="section bindings">
     <div class="section__title">
       <h2>Bindings</h2>
@@ -115,7 +129,7 @@
       </div>
       <div class="binding-card">
         <img src="/img/swift.svg" alt="Swift logo" />
-        <span>Swift</span>
+        <span aria-hidden="true"></span>
       </div>
     </div>
   </section>
@@ -171,40 +185,11 @@
   }
 }</code></pre>
     </div>
-    <div class="formula-inconsistencies">
-      <h3>Modeling inconsistencies</h3>
-      <p>Formulas capture differences in polling styles, token responses, and dynamic registration.</p>
-      <ul>
-        <li><strong>Claude Code</strong> issues CLI API keys via a dynamic endpoint and mentions roles in its response instead of the usual JSON.</li>
-        <li><strong>Codex CLI</strong> predates the OAuth infrastructure you expect, so the formula keeps the classic authorization code URLs and model hints for your requests.</li>
-        <li><strong>Tuist</strong> returns nested token structures and supports custom registration URLs for machine clients.</li>
-        <li><strong>Slack</strong> hands back nested tokens and extra incoming webhook IDs that the formulas store explicitly.</li>
-      </ul>
-    </div>
-  </section>
-
-  <section id="cta" class="section cta-strip">
-    <div>
-      <h2>Make sessions the backbone</h2>
-      <p>
-        Schlussel is the shared key for agent swarms, CI fleets, and multi-platform
-        automation. Give every CLI the same OAuth2 handshake so tokens stay valid
-        across concurrent refreshes.
-        </p>
-      <p class="cta-strip__note">
-        Most CLIs roll their own OAuth2 clients; Schlussel gives you a unified,
-        race-free session deck that works anywhere.
-      </p>
-      <p class="cta-strip__license">
-        Includes the MIT <a href="/LICENSE">license</a> and contributions from the Tuist team.
-      </p>
-    </div>
-    <a class="cta" href="https://github.com/pepicrft/schlussel">View on GitHub</a>
   </section>
 </main>
 
 <footer id="license" class="footer">
   <p>schlussel — engineered for disciplined concurrency.</p>
-  <p><a href="/LICENSE">MIT License</a> © 2025 Tuist.</p>
+  <p><a href="/LICENSE">MIT License</a> © 2025 pepicrft.</p>
 </footer>
 {% include 'footer' %}
