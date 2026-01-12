@@ -279,12 +279,29 @@ pub const OAuthConfigOwned = struct {
 pub fn configFromFormula(
     allocator: Allocator,
     formula: *const formulas.Formula,
-    client_id: []const u8,
-    client_secret: ?[]const u8,
+    client_id_override: ?[]const u8,
+    client_secret_override: ?[]const u8,
     redirect_uri: []const u8,
     scope_override: ?[]const u8,
 ) !OAuthConfigOwned {
     const scope_value = if (scope_override) |s| s else formula.scope;
+
+    // Use provided client_id/secret or fall back to formula's default public client
+    var client_id: []const u8 = undefined;
+    var client_secret: ?[]const u8 = client_secret_override;
+
+    if (client_id_override) |id| {
+        client_id = id;
+    } else if (formula.getDefaultClient()) |default_client| {
+        client_id = default_client.id;
+        // Only use default client's secret if no override was provided
+        if (client_secret == null) {
+            client_secret = default_client.secret;
+        }
+    } else {
+        return error.MissingClientId;
+    }
+
     return OAuthConfigOwned{
         .allocator = allocator,
         .client_id = try allocator.dupe(u8, client_id),
@@ -951,4 +968,221 @@ test "OAuthClient token storage" {
     defer loaded.deinit();
 
     try std.testing.expectEqualStrings("test_access_token", loaded.access_token);
+}
+
+test "OAuthConfigOwned: allocation and cleanup without leaks" {
+    const allocator = std.testing.allocator;
+
+    var owned = try OAuthConfig.custom(
+        allocator,
+        "test-client-id",
+        "https://example.com/authorize",
+        "https://example.com/token",
+        "http://127.0.0.1/callback",
+        "read write",
+        "https://example.com/device",
+    );
+    defer owned.deinit();
+
+    try std.testing.expectEqualStrings("test-client-id", owned.client_id);
+    try std.testing.expectEqualStrings("https://example.com/authorize", owned.authorization_endpoint);
+    try std.testing.expectEqualStrings("read write", owned.scope.?);
+    try std.testing.expectEqualStrings("https://example.com/device", owned.device_authorization_endpoint.?);
+}
+
+test "OAuthConfigOwned: toConfig borrows correctly" {
+    const allocator = std.testing.allocator;
+
+    var owned = try OAuthConfig.custom(
+        allocator,
+        "borrowed-client",
+        "https://example.com/auth",
+        "https://example.com/token",
+        "http://127.0.0.1/callback",
+        null,
+        null,
+    );
+    defer owned.deinit();
+
+    const config = owned.toConfig();
+
+    // Config borrows from owned - verify same pointers
+    try std.testing.expect(config.client_id.ptr == owned.client_id.ptr);
+    try std.testing.expect(config.authorization_endpoint.ptr == owned.authorization_endpoint.ptr);
+    try std.testing.expect(config.scope == null);
+    try std.testing.expect(config.device_authorization_endpoint == null);
+}
+
+test "configFromFormula: with public client without leaks" {
+    const allocator = std.testing.allocator;
+
+    // First, ensure builtin formulas are clean
+    formulas.deinitBuiltinFormulas();
+
+    // Create a test formula with public clients
+    const json_formula =
+        \\{
+        \\  "id": "test-provider",
+        \\  "label": "Test",
+        \\  "flows": ["device_code"],
+        \\  "endpoints": {
+        \\    "authorize": "https://test.com/authorize",
+        \\    "token": "https://test.com/token",
+        \\    "device": "https://test.com/device"
+        \\  },
+        \\  "scope": "default-scope",
+        \\  "public_clients": [
+        \\    {"name": "default", "id": "default-id", "secret": "default-secret"}
+        \\  ]
+        \\}
+    ;
+
+    var formula_owned = try formulas.loadFromJsonSlice(allocator, json_formula);
+    defer formula_owned.deinit();
+
+    // Test using default public client
+    var config = try configFromFormula(
+        allocator,
+        formula_owned.asConst(),
+        null, // No override - should use public client
+        null,
+        "http://127.0.0.1/callback",
+        null, // No scope override
+    );
+    defer config.deinit();
+
+    try std.testing.expectEqualStrings("default-id", config.client_id);
+    try std.testing.expectEqualStrings("default-secret", config.client_secret.?);
+    try std.testing.expectEqualStrings("default-scope", config.scope.?);
+    try std.testing.expectEqualStrings("https://test.com/device", config.device_authorization_endpoint.?);
+}
+
+test "configFromFormula: with client_id override without leaks" {
+    const allocator = std.testing.allocator;
+
+    const json_formula =
+        \\{
+        \\  "id": "test",
+        \\  "label": "Test",
+        \\  "flows": ["device_code"],
+        \\  "endpoints": {
+        \\    "authorize": "https://test.com/authorize",
+        \\    "token": "https://test.com/token"
+        \\  },
+        \\  "public_clients": [
+        \\    {"name": "default", "id": "default-id", "secret": "default-secret"}
+        \\  ]
+        \\}
+    ;
+
+    var formula_owned = try formulas.loadFromJsonSlice(allocator, json_formula);
+    defer formula_owned.deinit();
+
+    // Test with client_id override
+    var config = try configFromFormula(
+        allocator,
+        formula_owned.asConst(),
+        "override-id", // Override client ID
+        "override-secret", // Override secret
+        "http://127.0.0.1/callback",
+        "custom-scope",
+    );
+    defer config.deinit();
+
+    try std.testing.expectEqualStrings("override-id", config.client_id);
+    try std.testing.expectEqualStrings("override-secret", config.client_secret.?);
+    try std.testing.expectEqualStrings("custom-scope", config.scope.?);
+}
+
+test "configFromFormula: missing client_id returns error" {
+    const allocator = std.testing.allocator;
+
+    const json_formula =
+        \\{
+        \\  "id": "no-clients",
+        \\  "label": "No Clients",
+        \\  "flows": ["device_code"],
+        \\  "endpoints": {
+        \\    "authorize": "https://test.com/authorize",
+        \\    "token": "https://test.com/token"
+        \\  }
+        \\}
+    ;
+
+    var formula_owned = try formulas.loadFromJsonSlice(allocator, json_formula);
+    defer formula_owned.deinit();
+
+    // Should fail because no public_clients and no override
+    const result = configFromFormula(
+        allocator,
+        formula_owned.asConst(),
+        null,
+        null,
+        "http://127.0.0.1/callback",
+        null,
+    );
+
+    try std.testing.expectError(error.MissingClientId, result);
+}
+
+test "OAuthConfig.gitlabSelfHosted: without leaks" {
+    const allocator = std.testing.allocator;
+
+    var config = try OAuthConfig.gitlabSelfHosted(
+        allocator,
+        "gitlab-client",
+        "https://gitlab.mycompany.com",
+        "api read_user",
+    );
+    defer config.deinit();
+
+    try std.testing.expectEqualStrings("gitlab-client", config.client_id);
+    try std.testing.expectEqualStrings("https://gitlab.mycompany.com/oauth/authorize", config.authorization_endpoint);
+    try std.testing.expectEqualStrings("https://gitlab.mycompany.com/oauth/token", config.token_endpoint);
+    try std.testing.expectEqualStrings("api read_user", config.scope.?);
+}
+
+test "OAuthConfig.gitlabSelfHosted: strips trailing slash" {
+    const allocator = std.testing.allocator;
+
+    var config = try OAuthConfig.gitlabSelfHosted(
+        allocator,
+        "gitlab-client",
+        "https://gitlab.mycompany.com/",
+        null,
+    );
+    defer config.deinit();
+
+    try std.testing.expectEqualStrings("https://gitlab.mycompany.com/oauth/authorize", config.authorization_endpoint);
+}
+
+test "OAuthConfig.gitlabSelfHosted: rejects insecure URL" {
+    const allocator = std.testing.allocator;
+
+    const result = OAuthConfig.gitlabSelfHosted(
+        allocator,
+        "client",
+        "http://insecure.example.com",
+        null,
+    );
+
+    try std.testing.expectError(error.InsecureEndpoint, result);
+}
+
+test "validateEndpointSecurity: allows HTTPS" {
+    try validateEndpointSecurity("https://example.com/oauth");
+    try validateEndpointSecurity("https://sub.domain.example.com:8443/path");
+}
+
+test "validateEndpointSecurity: allows localhost HTTP" {
+    try validateEndpointSecurity("http://localhost/callback");
+    try validateEndpointSecurity("http://localhost:8080/callback");
+    try validateEndpointSecurity("http://127.0.0.1/callback");
+    try validateEndpointSecurity("http://127.0.0.1:3000/callback");
+    try validateEndpointSecurity("http://[::1]/callback");
+}
+
+test "validateEndpointSecurity: rejects insecure HTTP" {
+    try std.testing.expectError(error.InsecureEndpoint, validateEndpointSecurity("http://example.com/oauth"));
+    try std.testing.expectError(error.InsecureEndpoint, validateEndpointSecurity("http://192.168.1.1/oauth"));
 }

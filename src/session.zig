@@ -1036,3 +1036,235 @@ test "Token remaining lifetime fraction" {
         try std.testing.expect(fraction >= 0.49 and fraction <= 0.51);
     }
 }
+
+// ============================================================================
+// Additional Memory Leak Tests
+// ============================================================================
+
+test "Token.initFull: all fields allocated without leaks" {
+    const allocator = std.testing.allocator;
+
+    var token = try Token.initFull(
+        allocator,
+        "access_token_value",
+        "Bearer",
+        "refresh_token_value",
+        3600,
+        "read write delete",
+        "id_token_value",
+    );
+    defer token.deinit();
+
+    try std.testing.expectEqualStrings("access_token_value", token.access_token);
+    try std.testing.expectEqualStrings("Bearer", token.token_type);
+    try std.testing.expectEqualStrings("refresh_token_value", token.refresh_token.?);
+    try std.testing.expectEqual(@as(u64, 3600), token.expires_in.?);
+    try std.testing.expectEqualStrings("read write delete", token.scope.?);
+    try std.testing.expectEqualStrings("id_token_value", token.id_token.?);
+}
+
+test "Token.clone: clones all fields without leaks" {
+    const allocator = std.testing.allocator;
+
+    var original = try Token.initFull(
+        allocator,
+        "original_access",
+        "Bearer",
+        "original_refresh",
+        7200,
+        "scope1 scope2",
+        "original_id",
+    );
+    defer original.deinit();
+
+    var cloned = try original.clone(allocator);
+    defer cloned.deinit();
+
+    // Verify all fields cloned correctly
+    try std.testing.expectEqualStrings("original_access", cloned.access_token);
+    try std.testing.expectEqualStrings("Bearer", cloned.token_type);
+    try std.testing.expectEqualStrings("original_refresh", cloned.refresh_token.?);
+    try std.testing.expectEqual(@as(u64, 7200), cloned.expires_in.?);
+    try std.testing.expectEqualStrings("scope1 scope2", cloned.scope.?);
+    try std.testing.expectEqualStrings("original_id", cloned.id_token.?);
+
+    // Verify independent memory (different pointers)
+    try std.testing.expect(cloned.access_token.ptr != original.access_token.ptr);
+    try std.testing.expect(cloned.refresh_token.?.ptr != original.refresh_token.?.ptr);
+}
+
+test "Token.toJson and fromJson: roundtrip with all fields" {
+    const allocator = std.testing.allocator;
+
+    var original = try Token.initFull(
+        allocator,
+        "test_access",
+        "Bearer",
+        "test_refresh",
+        3600,
+        "read write",
+        "test_id_token",
+    );
+    defer original.deinit();
+
+    // Set expires_at manually for roundtrip test
+    original.expires_at = 1234567890;
+
+    const json_data = try original.toJson(allocator);
+    defer allocator.free(json_data);
+
+    var restored = try Token.fromJson(allocator, json_data);
+    defer restored.deinit();
+
+    try std.testing.expectEqualStrings(original.access_token, restored.access_token);
+    try std.testing.expectEqualStrings(original.token_type, restored.token_type);
+    try std.testing.expectEqualStrings(original.refresh_token.?, restored.refresh_token.?);
+    try std.testing.expectEqual(original.expires_in, restored.expires_in);
+    try std.testing.expectEqual(original.expires_at, restored.expires_at);
+    try std.testing.expectEqualStrings(original.scope.?, restored.scope.?);
+    try std.testing.expectEqualStrings(original.id_token.?, restored.id_token.?);
+}
+
+test "Token.toJson: escapes special characters" {
+    const allocator = std.testing.allocator;
+
+    var token = try Token.init(allocator, "token\"with\\special\nchars", "Bearer");
+    defer token.deinit();
+
+    const json_data = try token.toJson(allocator);
+    defer allocator.free(json_data);
+
+    // Verify the JSON can be parsed back
+    var restored = try Token.fromJson(allocator, json_data);
+    defer restored.deinit();
+
+    try std.testing.expectEqualStrings("token\"with\\special\nchars", restored.access_token);
+}
+
+test "Token.fromJson: handles missing optional fields" {
+    const allocator = std.testing.allocator;
+
+    const minimal_json =
+        \\{"access_token":"minimal","token_type":"Bearer"}
+    ;
+
+    var token = try Token.fromJson(allocator, minimal_json);
+    defer token.deinit();
+
+    try std.testing.expectEqualStrings("minimal", token.access_token);
+    try std.testing.expectEqualStrings("Bearer", token.token_type);
+    try std.testing.expect(token.refresh_token == null);
+    try std.testing.expect(token.expires_in == null);
+    try std.testing.expect(token.expires_at == null);
+    try std.testing.expect(token.scope == null);
+    try std.testing.expect(token.id_token == null);
+}
+
+test "Token.fromJson: rejects invalid JSON" {
+    const allocator = std.testing.allocator;
+
+    // Missing required fields
+    const result1 = Token.fromJson(allocator, "{}");
+    try std.testing.expectError(error.InvalidParameter, result1);
+
+    // Not an object
+    const result2 = Token.fromJson(allocator, "[]");
+    try std.testing.expectError(error.InvalidParameter, result2);
+
+    // Invalid syntax
+    const result3 = Token.fromJson(allocator, "not json");
+    try std.testing.expectError(error.SyntaxError, result3);
+}
+
+test "MemoryStorage: multiple save and load cycles" {
+    const allocator = std.testing.allocator;
+
+    var storage = MemoryStorage.init(allocator);
+    defer storage.deinit();
+
+    const iface = storage.storage();
+
+    // Save multiple tokens
+    var token1 = try Token.init(allocator, "token1", "Bearer");
+    defer token1.deinit();
+    try iface.save("key1", token1);
+
+    var token2 = try Token.init(allocator, "token2", "Bearer");
+    defer token2.deinit();
+    try iface.save("key2", token2);
+
+    // Load and verify
+    var loaded1 = (try iface.load(allocator, "key1")).?;
+    defer loaded1.deinit();
+    try std.testing.expectEqualStrings("token1", loaded1.access_token);
+
+    var loaded2 = (try iface.load(allocator, "key2")).?;
+    defer loaded2.deinit();
+    try std.testing.expectEqualStrings("token2", loaded2.access_token);
+
+    // Overwrite
+    var token1_new = try Token.init(allocator, "token1_updated", "Bearer");
+    defer token1_new.deinit();
+    try iface.save("key1", token1_new);
+
+    var loaded1_new = (try iface.load(allocator, "key1")).?;
+    defer loaded1_new.deinit();
+    try std.testing.expectEqualStrings("token1_updated", loaded1_new.access_token);
+}
+
+test "MemoryStorage: delete removes token" {
+    const allocator = std.testing.allocator;
+
+    var storage = MemoryStorage.init(allocator);
+    defer storage.deinit();
+
+    const iface = storage.storage();
+
+    var token = try Token.init(allocator, "to_delete", "Bearer");
+    defer token.deinit();
+    try iface.save("delete_key", token);
+
+    try std.testing.expect(iface.exists("delete_key"));
+
+    try iface.delete("delete_key");
+
+    try std.testing.expect(!iface.exists("delete_key"));
+    try std.testing.expect((try iface.load(allocator, "delete_key")) == null);
+}
+
+test "MemoryStorage: load nonexistent returns null" {
+    const allocator = std.testing.allocator;
+
+    var storage = MemoryStorage.init(allocator);
+    defer storage.deinit();
+
+    const result = try storage.storage().load(allocator, "nonexistent");
+    try std.testing.expect(result == null);
+}
+
+test "Session: creation and token management" {
+    const allocator = std.testing.allocator;
+
+    var session_instance = try Session.init(allocator, "github.com");
+    defer session_instance.deinit();
+
+    try std.testing.expectEqualStrings("github.com", session_instance.domain);
+    try std.testing.expect(session_instance.token == null);
+
+    // Set token
+    const token = try Token.init(allocator, "session_token", "Bearer");
+    session_instance.setToken(token);
+
+    try std.testing.expect(session_instance.token != null);
+    try std.testing.expectEqualStrings("session_token", session_instance.token.?.access_token);
+
+    // Replace token
+    const new_token = try Token.init(allocator, "new_session_token", "Bearer");
+    session_instance.setToken(new_token);
+
+    try std.testing.expectEqualStrings("new_session_token", session_instance.token.?.access_token);
+
+    // Clear token
+    session_instance.clearToken();
+    try std.testing.expect(session_instance.token == null);
+}

@@ -1,0 +1,18 @@
+<svg width="1200" height="1200" viewBox="0 0 1200 1200" fill="none" xmlns="http://www.w3.org/2000/svg">
+<rect width="1200" height="1200" fill="#ece5cf"/>
+<defs>
+    <radialGradient id="rays" cx="0.5" cy="0.5" r="0.5" gradientUnits="objectBoundingBox">
+      <stop offset="0" stop-color="#ece5cf"/>
+      <stop offset="1" stop-color="#ece5cf" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect x="100" y="100" width="1000" height="1000" rx="150" fill="#ece5cf"/>
+
+  <g transform="translate(300, 300)">
+    <path d="M300 200 C300 120 240 60 160 60 C80 60 20 120 20 200 L20 400 C20 480 80 540 160 540 C240 540 300 480 300 400 Z" fill="#161412"/>
+    <circle cx="160" cy="300" r="70" fill="#9c2b25"/>
+  </g>
+
+  <rect x="100" y="100" width="1000" height="1000" rx="150" fill="url(#rays)" style="mix-blend-mode: overlay;"/>
+</svg>

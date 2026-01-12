@@ -48,6 +48,9 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
+    // Clean up builtin formulas on exit
+    defer formulas.deinitBuiltinFormulas();
+
     var stdout_writer = std.fs.File.stdout().writer(&.{});
     const stdout = &stdout_writer.interface;
     var stderr_writer = std.fs.File.stderr().writer(&.{});
@@ -126,7 +129,7 @@ fn cmdDevice(allocator: Allocator, args: []const []const u8, stdout: anytype, st
         try stderr.print("USAGE:\n    schlussel device <provider|--custom-provider> [options]\n\n", .{});
         try stderr.print("PROVIDERS:\n    github, google, microsoft, gitlab, tuist\n\n", .{});
         try stderr.print("OPTIONS:\n", .{});
-        try stderr.print("    --client-id <id>              OAuth client ID (required)\n", .{});
+        try stderr.print("    --client-id <id>              OAuth client ID (optional if formula provides one)\n", .{});
         try stderr.print("    --client-secret <secret>      OAuth client secret (optional)\n", .{});
         try stderr.print("    --scope <scopes>              OAuth scopes (space-separated)\n", .{});
         try stderr.print("    --formula-json <path>         Load a declarative formula JSON\n", .{});
@@ -142,9 +145,14 @@ fn cmdDevice(allocator: Allocator, args: []const []const u8, stdout: anytype, st
     const provider_arg = args[2];
     const is_custom = std.mem.eql(u8, provider_arg, "--custom-provider");
 
-    var config: oauth.OAuthConfig = undefined;
     var thirdPartyFormula: ?formulas.FormulaOwned = null;
-    defer if (thirdPartyFormula) |owner| owner.deinit();
+    defer if (thirdPartyFormula) |*owner| owner.deinit();
+
+    // We need owned_config at function scope so it lives long enough
+    var owned_config: ?oauth.OAuthConfigOwned = null;
+    defer if (owned_config) |*oc| oc.deinit();
+
+    var config: oauth.OAuthConfig = undefined;
 
     if (is_custom) {
         // Parse custom provider options
@@ -196,7 +204,7 @@ fn cmdDevice(allocator: Allocator, args: []const []const u8, stdout: anytype, st
             return error.MissingRequiredOptions;
         }
 
-        var owned_config = oauth.OAuthConfigOwned{
+        owned_config = oauth.OAuthConfigOwned{
             .allocator = allocator,
             .client_id = try allocator.dupe(u8, client_id.?),
             .client_secret = if (client_secret) |s| try allocator.dupe(u8, s) else null,
@@ -206,9 +214,8 @@ fn cmdDevice(allocator: Allocator, args: []const []const u8, stdout: anytype, st
             .scope = if (scope) |s| try allocator.dupe(u8, s) else null,
             .device_authorization_endpoint = if (device_code_endpoint) |e| try allocator.dupe(u8, e) else null,
         };
-        defer owned_config.deinit();
 
-        config = owned_config.toConfig();
+        config = owned_config.?.toConfig();
     } else {
         var client_id: ?[]const u8 = null;
         var scope: ?[]const u8 = null;
@@ -245,13 +252,8 @@ fn cmdDevice(allocator: Allocator, args: []const []const u8, stdout: anytype, st
             }
         }
 
-        if (client_id == null) {
-            try stderr.print("Error: --client-id is required\n", .{});
-            return error.MissingRequiredOptions;
-        }
-
-        if (formula_json_path) {
-            thirdPartyFormula = try formulas.FormulaOwned.loadFromPath(allocator, formula_json_path.?);
+        if (formula_json_path != null) {
+            thirdPartyFormula = try formulas.loadFromPath(allocator, formula_json_path.?);
         }
 
         var formula_ptr: ?*const formulas.Formula = null;
@@ -264,22 +266,31 @@ fn cmdDevice(allocator: Allocator, args: []const []const u8, stdout: anytype, st
             }
             formula_ptr = owner.asConst();
         } else {
-            formula_ptr = formulas.findById(provider_arg);
+            formula_ptr = try formulas.findById(allocator, provider_arg);
         }
 
         if (formula_ptr) |formula| {
             const redirect = redirect_uri orelse "http://127.0.0.1/callback";
-            var owned_config = try oauth.configFromFormula(
+            owned_config = oauth.configFromFormula(
                 allocator,
                 formula,
-                client_id.?,
+                client_id,
                 client_secret,
                 redirect,
                 scope,
-            );
-            defer owned_config.deinit();
-            config = owned_config.toConfig();
+            ) catch |err| {
+                if (err == error.MissingClientId) {
+                    try stderr.print("Error: --client-id is required (formula does not provide one)\n", .{});
+                    return error.MissingRequiredOptions;
+                }
+                return err;
+            };
+            config = owned_config.?.toConfig();
         } else {
+            if (client_id == null) {
+                try stderr.print("Error: --client-id is required\n", .{});
+                return error.MissingRequiredOptions;
+            }
             const preset_scope = scope orelse "repo user";
             config = try createPresetConfig(provider_arg, client_id.?, preset_scope);
         }
@@ -320,9 +331,143 @@ fn cmdDevice(allocator: Allocator, args: []const []const u8, stdout: anytype, st
     try stdout.print("\nToken saved with key: {s}\n", .{storage_key});
 }
 
-fn cmdCode(_: Allocator, _: []const []const u8, _: anytype, stderr: anytype) !void {
-    try stderr.print("Error: Authorization Code Flow not yet implemented\n", .{});
-    return error.NotImplemented;
+fn cmdCode(allocator: Allocator, args: []const []const u8, stdout: anytype, stderr: anytype) !void {
+    if (args.len < 3) {
+        try stderr.print("Error: Missing provider name\n\n", .{});
+        try stderr.print("USAGE:\n    schlussel code <provider> [options]\n\n", .{});
+        try stderr.print("PROVIDERS:\n    tuist, github, google, microsoft, gitlab\n\n", .{});
+        try stderr.print("OPTIONS:\n", .{});
+        try stderr.print("    --client-id <id>              OAuth client ID (optional if formula provides one)\n", .{});
+        try stderr.print("    --client-secret <secret>      OAuth client secret (optional)\n", .{});
+        try stderr.print("    --scope <scopes>              OAuth scopes (space-separated)\n", .{});
+        try stderr.print("    --redirect-uri <uri>          Redirect URI (default: auto-assigned)\n", .{});
+        try stderr.print("    --formula-json <path>         Load a declarative formula JSON\n", .{});
+        try stderr.print("\n", .{});
+        return error.MissingArguments;
+    }
+
+    const provider_arg = args[2];
+
+    var client_id: ?[]const u8 = null;
+    var scope: ?[]const u8 = null;
+    var redirect_uri: ?[]const u8 = null;
+    var client_secret: ?[]const u8 = null;
+    var formula_json_path: ?[]const u8 = null;
+
+    var i: usize = 3;
+    while (i < args.len) : (i += 1) {
+        const arg = args[i];
+        if (i + 1 >= args.len) {
+            try stderr.print("Error: Missing value for option '{s}'\n", .{arg});
+            return error.MissingOptionValue;
+        }
+
+        if (std.mem.eql(u8, arg, "--client-id")) {
+            client_id = args[i + 1];
+            i += 1;
+        } else if (std.mem.eql(u8, arg, "--scope")) {
+            scope = args[i + 1];
+            i += 1;
+        } else if (std.mem.eql(u8, arg, "--redirect-uri")) {
+            redirect_uri = args[i + 1];
+            i += 1;
+        } else if (std.mem.eql(u8, arg, "--client-secret")) {
+            client_secret = args[i + 1];
+            i += 1;
+        } else if (std.mem.eql(u8, arg, "--formula-json")) {
+            formula_json_path = args[i + 1];
+            i += 1;
+        } else {
+            try stderr.print("Error: Unknown option '{s}'\n", .{arg});
+            return error.UnknownOption;
+        }
+    }
+
+    var thirdPartyFormula: ?formulas.FormulaOwned = null;
+    defer if (thirdPartyFormula) |*owner| owner.deinit();
+
+    // We need owned_config at function scope so it lives long enough
+    var owned_config: ?oauth.OAuthConfigOwned = null;
+    defer if (owned_config) |*oc| oc.deinit();
+
+    if (formula_json_path != null) {
+        thirdPartyFormula = try formulas.loadFromPath(allocator, formula_json_path.?);
+    }
+
+    var formula_ptr: ?*const formulas.Formula = null;
+    if (thirdPartyFormula) |owner| {
+        if (!std.mem.eql(u8, owner.formula.id, provider_arg)) {
+            try stderr.print(
+                "Warning: formula id '{s}' does not match provider '{s}'\n",
+                .{ owner.formula.id, provider_arg },
+            );
+        }
+        formula_ptr = owner.asConst();
+    } else {
+        formula_ptr = try formulas.findById(allocator, provider_arg);
+    }
+
+    var config: oauth.OAuthConfig = undefined;
+
+    if (formula_ptr) |formula| {
+        // For authorization code flow, we'll use a dynamic redirect URI from the callback server
+        const redirect = redirect_uri orelse "http://127.0.0.1:0/callback";
+        owned_config = oauth.configFromFormula(
+            allocator,
+            formula,
+            client_id,
+            client_secret,
+            redirect,
+            scope,
+        ) catch |err| {
+            if (err == error.MissingClientId) {
+                try stderr.print("Error: --client-id is required (formula does not provide one)\n", .{});
+                return error.MissingRequiredOptions;
+            }
+            return err;
+        };
+        config = owned_config.?.toConfig();
+    } else {
+        if (client_id == null) {
+            try stderr.print("Error: --client-id is required\n", .{});
+            return error.MissingRequiredOptions;
+        }
+        const preset_scope = scope orelse "openid";
+        config = try createPresetConfig(provider_arg, client_id.?, preset_scope);
+    }
+
+    // Create storage (default to file storage)
+    var storage = try session.FileStorage.init(allocator, "schlussel");
+    defer storage.deinit();
+
+    // Create OAuth client
+    var client = oauth.OAuthClient.init(allocator, config, storage.storage());
+    defer client.deinit();
+
+    try stdout.print("\n=== Authorization Code Flow with PKCE ===\n\n", .{});
+    try stdout.print("Starting authorization...\n", .{});
+
+    // Perform Authorization Code Flow
+    var token = client.authorize() catch |err| {
+        try stderr.print("\nAuthorization failed: {s}\n", .{@errorName(err)});
+        return err;
+    };
+    defer token.deinit();
+
+    try stdout.print("\n=== Authorization Successful! ===\n\n", .{});
+    try stdout.print("Token type: {s}\n", .{token.token_type});
+
+    if (token.scope) |s| {
+        try stdout.print("Scope: {s}\n", .{s});
+    }
+
+    if (token.expires_at) |expires_at| {
+        try stdout.print("Expires at: {d} (Unix timestamp)\n", .{expires_at});
+    }
+
+    // Save token
+    try client.saveToken(provider_arg, token);
+    try stdout.print("\nToken saved with key: {s}\n", .{provider_arg});
 }
 
 fn cmdToken(allocator: Allocator, args: []const []const u8, stdout: anytype, stderr: anytype) !void {
