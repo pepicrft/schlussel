@@ -7,6 +7,7 @@ zig-out/
 dist/
 build-xcframework/
 *.xcframework/
+website/build/
 
 # Node.js
 bindings/node/node_modules/
@@ -31,5 +32,4 @@ Thumbs.db
 
 # Mise
 .mise.lock
-
 
