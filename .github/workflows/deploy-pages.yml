@@ -1,0 +1,38 @@
+name: Deploy Website
+
+on:
+  push:
+    branches: [ main ]
+
+concurrency:
+  group: deploy-pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install tools with mise
+        uses: jdx/mise-action@v2
+
+      - name: Build static site
+        working-directory: website
+        run: gesttalt build
+
+      - name: Deploy to Cloudflare Pages
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          wrangler pages deploy website/build \
+            --project-name schlussel \
+            --branch "${GITHUB_REF_NAME}"
