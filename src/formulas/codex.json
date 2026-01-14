@@ -11,7 +11,8 @@
     {
       "name": "codex-cli",
       "id": "app_EMoamEEZ73f0CkXaXp7hrann",
-      "source": "https://github.com/openai/codex"
+      "source": "https://github.com/openai/codex",
+      "flows": ["authorization_code"]
     }
   ],
   "onboarding": {

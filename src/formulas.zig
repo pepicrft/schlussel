@@ -30,6 +30,7 @@ pub const PublicClient = struct {
     id: []const u8,
     secret: ?[]const u8,
     source: ?[]const u8,
+    flows: ?[]const Flow,
 };
 
 pub const Quirks = struct {
@@ -127,7 +128,12 @@ pub const FormulaOwned = struct {
         if (self.flows_alloc) |arr| self.allocator.free(arr);
         if (self.steps_alloc) |arr| self.allocator.free(arr);
         if (self.extra_fields_alloc) |arr| self.allocator.free(arr);
-        if (self.public_clients_alloc) |arr| self.allocator.free(arr);
+        if (self.public_clients_alloc) |arr| {
+            for (arr) |client| {
+                if (client.flows) |flows| self.allocator.free(flows);
+            }
+            self.allocator.free(arr);
+        }
         self.parsed.deinit();
     }
 
@@ -197,18 +203,35 @@ fn parsePublicClients(allocator: Allocator, value: json.Value) ![]const PublicCl
 
     var slice = try allocator.alloc(PublicClient, arr.items.len);
     errdefer allocator.free(slice);
+    var parsed_count: usize = 0;
+    errdefer {
+        for (slice[0..parsed_count]) |client| {
+            if (client.flows) |flows| allocator.free(flows);
+        }
+    }
     for (arr.items, 0..) |item, idx| {
         const obj = switch (item) {
             .object => |o| o,
             else => return Error.InvalidField,
         };
 
+        var flows: ?[]const Flow = null;
+        if (obj.get("flows")) |flows_value| {
+            if (flows_value != .null) {
+                flows = try parseFlows(allocator, flows_value);
+            }
+        }
+        errdefer if (flows) |arr| allocator.free(arr);
+
         slice[idx] = PublicClient{
             .name = try expectString(obj.get("name") orelse return Error.MissingField),
             .id = try expectString(obj.get("id") orelse return Error.MissingField),
             .secret = try optionalString(obj.get("secret")),
             .source = try optionalString(obj.get("source")),
+            .flows = flows,
         };
+        flows = null;
+        parsed_count += 1;
     }
     return slice;
 }
@@ -368,11 +391,13 @@ test "FormulaOwned: parse formula with public_clients without leaks" {
         \\      "name": "gh-cli",
         \\      "id": "abc123",
         \\      "secret": "secret456",
-        \\      "source": "https://github.com/cli/cli"
+        \\      "source": "https://github.com/cli/cli",
+        \\      "flows": ["device_code"]
         \\    },
         \\    {
         \\      "name": "another-cli",
-        \\      "id": "def789"
+        \\      "id": "def789",
+        \\      "flows": ["authorization_code"]
         \\    }
         \\  ]
         \\}
@@ -392,12 +417,18 @@ test "FormulaOwned: parse formula with public_clients without leaks" {
     try std.testing.expectEqualStrings("gh-cli", default_client.?.name);
     try std.testing.expectEqualStrings("abc123", default_client.?.id);
     try std.testing.expectEqualStrings("secret456", default_client.?.secret.?);
+    try std.testing.expect(default_client.?.flows != null);
+    try std.testing.expectEqual(@as(usize, 1), default_client.?.flows.?.len);
+    try std.testing.expectEqual(Flow.device_code, default_client.?.flows.?[0]);
 
     // Test getClientByName
     const found = owned.formula.getClientByName("another-cli");
     try std.testing.expect(found != null);
     try std.testing.expectEqualStrings("def789", found.?.id);
     try std.testing.expect(found.?.secret == null);
+    try std.testing.expect(found.?.flows != null);
+    try std.testing.expectEqual(@as(usize, 1), found.?.flows.?.len);
+    try std.testing.expectEqual(Flow.authorization_code, found.?.flows.?[0]);
 
     // Test not found
     const not_found = owned.formula.getClientByName("nonexistent");

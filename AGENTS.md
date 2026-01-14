@@ -4,6 +4,10 @@
 
 Schlussel is a cross-platform OAuth 2.0 library with PKCE and Device Code Flow support, written in Zig. It's specifically designed for command-line applications and provides secure token storage using OS credential managers.
 
+## Website Notes
+
+- Keep the example formula snippet in `website/theme/layouts/index.liquid` aligned with the JSON schema and the current contents of `src/formulas/claude.json`.
+
 ## Core Architecture
 
 ### Key Modules

@@ -30,6 +30,9 @@ const Command = enum {
     code,
     token,
     register,
+    register_read,
+    register_update,
+    register_delete,
     help,
 
     pub fn fromString(str: []const u8) ?Command {
@@ -38,6 +41,9 @@ const Command = enum {
         if (eql(u8, str, "code")) return .code;
         if (eql(u8, str, "token")) return .token;
         if (eql(u8, str, "register")) return .register;
+        if (eql(u8, str, "register-read")) return .register_read;
+        if (eql(u8, str, "register-update")) return .register_update;
+        if (eql(u8, str, "register-delete")) return .register_delete;
         if (eql(u8, str, "help")) return .help;
         return null;
     }
@@ -82,6 +88,9 @@ pub fn main() !void {
         .code => try cmdCode(allocator, args, stdout, stderr),
         .token => try cmdToken(allocator, args, stdout, stderr),
         .register => try cmdRegister(allocator, args, stdout, stderr),
+        .register_read => try cmdRegisterRead(allocator, args, stdout, stderr),
+        .register_update => try cmdRegisterUpdate(allocator, args, stdout, stderr),
+        .register_delete => try cmdRegisterDelete(allocator, args, stdout, stderr),
         .help => {}, // already handled
     }
 }
@@ -98,6 +107,9 @@ fn printUsage(writer: anytype) !void {
         \\    code                Authorization Code Flow with PKCE
         \\    token <action>      Token management operations
         \\    register            Dynamically register OAuth client
+        \\    register-read       Read dynamic client configuration
+        \\    register-update     Update dynamic client configuration
+        \\    register-delete     Delete dynamic client registration
         \\    help                Show this help message
         \\
         \\TOKEN ACTIONS:
@@ -117,6 +129,10 @@ fn printUsage(writer: anytype) !void {
         \\      --client-name "My App" \
         \\      --redirect-uri https://example.com/callback \
         \\      --grant-types authorization_code,refresh_token
+        \\
+        \\    # Read an existing registration (use registration_client_uri)
+        \\    schlussel register-read https://auth.example.com/register/abc \
+        \\      --registration-access-token <token>
         \\
         \\For more help, visit: https://github.com/pepicrft/schlussel
         \\
@@ -526,6 +542,165 @@ fn createPresetConfig(provider: []const u8, client_id: []const u8, scope: []cons
     }
 }
 
+const RegistrationOptions = struct {
+    metadata: registration.ClientMetadata,
+    redirect_uris_list: std.ArrayList([]const u8),
+    grant_types_list: std.ArrayList([]const u8),
+    response_types_list: std.ArrayList([]const u8),
+    access_token: ?[]const u8 = null,
+
+    fn deinit(self: *RegistrationOptions, allocator: Allocator) void {
+        self.metadata.deinit();
+        for (self.redirect_uris_list.items) |uri| allocator.free(uri);
+        self.redirect_uris_list.deinit(allocator);
+        for (self.grant_types_list.items) |gt| allocator.free(gt);
+        self.grant_types_list.deinit(allocator);
+        for (self.response_types_list.items) |rt| allocator.free(rt);
+        self.response_types_list.deinit(allocator);
+    }
+};
+
+fn appendCommaSeparated(allocator: Allocator, list: *std.ArrayList([]const u8), value: []const u8) !void {
+    var iter = std.mem.splitScalar(u8, value, ',');
+    while (iter.next()) |item| {
+        const trimmed = std.mem.trim(u8, item, " ");
+        if (trimmed.len > 0) {
+            try list.append(allocator, try allocator.dupe(u8, trimmed));
+        }
+    }
+}
+
+fn parseRegistrationOptions(
+    allocator: Allocator,
+    args: []const []const u8,
+    start_index: usize,
+    stderr: anytype,
+    require_redirect_uris: bool,
+    require_access_token: bool,
+) !RegistrationOptions {
+    var client_name: ?[]const u8 = null;
+    var redirect_uris_list: std.ArrayList([]const u8) = .empty;
+    errdefer {
+        for (redirect_uris_list.items) |uri| allocator.free(uri);
+        redirect_uris_list.deinit(allocator);
+    }
+
+    var grant_types_list: std.ArrayList([]const u8) = .empty;
+    errdefer {
+        for (grant_types_list.items) |gt| allocator.free(gt);
+        grant_types_list.deinit(allocator);
+    }
+
+    var response_types_list: std.ArrayList([]const u8) = .empty;
+    errdefer {
+        for (response_types_list.items) |rt| allocator.free(rt);
+        response_types_list.deinit(allocator);
+    }
+
+    var scope: ?[]const u8 = null;
+    var token_auth_method: ?[]const u8 = null;
+    var access_token: ?[]const u8 = null;
+
+    var i: usize = start_index;
+    while (i < args.len) : (i += 1) {
+        const arg = args[i];
+        if (i + 1 >= args.len) {
+            try stderr.print("Error: Missing value for option '{s}'\n", .{arg});
+            return error.MissingOptionValue;
+        }
+
+        if (std.mem.eql(u8, arg, "--client-name")) {
+            client_name = args[i + 1];
+            i += 1;
+        } else if (std.mem.eql(u8, arg, "--redirect-uri")) {
+            try redirect_uris_list.append(allocator, try allocator.dupe(u8, args[i + 1]));
+            i += 1;
+        } else if (std.mem.eql(u8, arg, "--grant-types")) {
+            try appendCommaSeparated(allocator, &grant_types_list, args[i + 1]);
+            i += 1;
+        } else if (std.mem.eql(u8, arg, "--response-types")) {
+            try appendCommaSeparated(allocator, &response_types_list, args[i + 1]);
+            i += 1;
+        } else if (std.mem.eql(u8, arg, "--scope")) {
+            scope = args[i + 1];
+            i += 1;
+        } else if (std.mem.eql(u8, arg, "--token-auth-method")) {
+            token_auth_method = args[i + 1];
+            i += 1;
+        } else if (std.mem.eql(u8, arg, "--registration-access-token")) {
+            access_token = args[i + 1];
+            i += 1;
+        } else {
+            try stderr.print("Error: Unknown option '{s}'\n", .{arg});
+            return error.UnknownOption;
+        }
+    }
+
+    if (require_redirect_uris and redirect_uris_list.items.len == 0) {
+        try stderr.print("Error: At least one --redirect-uri is required\n", .{});
+        return error.MissingRequiredOptions;
+    }
+
+    if (require_access_token and access_token == null) {
+        try stderr.print("Error: --registration-access-token is required\n", .{});
+        return error.MissingRequiredOptions;
+    }
+
+    var metadata = try registration.ClientMetadata.init(allocator);
+    errdefer metadata.deinit();
+
+    if (client_name) |name| metadata.client_name = name;
+    metadata.redirect_uris = redirect_uris_list.items;
+    if (grant_types_list.items.len > 0) {
+        metadata.grant_types = grant_types_list.items;
+    }
+    if (response_types_list.items.len > 0) {
+        metadata.response_types = response_types_list.items;
+    }
+    if (scope) |s| {
+        metadata.scope = try allocator.dupe(u8, s);
+    }
+    if (token_auth_method) |m| {
+        metadata.token_endpoint_auth_method = try allocator.dupe(u8, m);
+    }
+
+    return .{
+        .metadata = metadata,
+        .redirect_uris_list = redirect_uris_list,
+        .grant_types_list = grant_types_list,
+        .response_types_list = response_types_list,
+        .access_token = access_token,
+    };
+}
+
+fn parseRegistrationAccessToken(args: []const []const u8, start_index: usize, stderr: anytype) ![]const u8 {
+    var access_token: ?[]const u8 = null;
+
+    var i: usize = start_index;
+    while (i < args.len) : (i += 1) {
+        const arg = args[i];
+        if (i + 1 >= args.len) {
+            try stderr.print("Error: Missing value for option '{s}'\n", .{arg});
+            return error.MissingOptionValue;
+        }
+
+        if (std.mem.eql(u8, arg, "--registration-access-token")) {
+            access_token = args[i + 1];
+            i += 1;
+        } else {
+            try stderr.print("Error: Unknown option '{s}'\n", .{arg});
+            return error.UnknownOption;
+        }
+    }
+
+    if (access_token == null) {
+        try stderr.print("Error: --registration-access-token is required\n", .{});
+        return error.MissingRequiredOptions;
+    }
+
+    return access_token.?;
+}
+
 fn cmdRegister(allocator: Allocator, args: []const []const u8, stdout: anytype, stderr: anytype) !void {
     if (args.len < 3) {
         try stderr.print("Error: Missing registration endpoint URL\n\n", .{});
@@ -542,101 +717,8 @@ fn cmdRegister(allocator: Allocator, args: []const []const u8, stdout: anytype, 
 
     const endpoint = args[2];
 
-    // Parse options
-    var client_name: ?[]const u8 = null;
-    var redirect_uris_list: std.ArrayList([]const u8) = .empty;
-    defer {
-        for (redirect_uris_list.items) |uri| allocator.free(uri);
-        redirect_uris_list.deinit(allocator);
-    }
-
-    var grant_types_str: ?[]const u8 = null;
-    var response_types_str: ?[]const u8 = null;
-    var scope: ?[]const u8 = null;
-    var token_auth_method: ?[]const u8 = null;
-
-    var i: usize = 3;
-    while (i < args.len) : (i += 1) {
-        const arg = args[i];
-        if (i + 1 >= args.len) {
-            try stderr.print("Error: Missing value for option '{s}'\n", .{arg});
-            return error.MissingOptionValue;
-        }
-
-        if (std.mem.eql(u8, arg, "--client-name")) {
-            client_name = args[i + 1];
-            i += 1;
-        } else if (std.mem.eql(u8, arg, "--redirect-uri")) {
-            try redirect_uris_list.append(allocator, try allocator.dupe(u8, args[i + 1]));
-            i += 1;
-        } else if (std.mem.eql(u8, arg, "--grant-types")) {
-            grant_types_str = args[i + 1];
-            i += 1;
-        } else if (std.mem.eql(u8, arg, "--response-types")) {
-            response_types_str = args[i + 1];
-            i += 1;
-        } else if (std.mem.eql(u8, arg, "--scope")) {
-            scope = args[i + 1];
-            i += 1;
-        } else if (std.mem.eql(u8, arg, "--token-auth-method")) {
-            token_auth_method = args[i + 1];
-            i += 1;
-        } else {
-            try stderr.print("Error: Unknown option '{s}'\n", .{arg});
-            return error.UnknownOption;
-        }
-    }
-
-    if (redirect_uris_list.items.len == 0) {
-        try stderr.print("Error: At least one --redirect-uri is required\n", .{});
-        return error.MissingRequiredOptions;
-    }
-
-    // Create client metadata
-    var metadata = try registration.ClientMetadata.init(allocator);
-    defer metadata.deinit();
-
-    if (client_name) |name| metadata.client_name = name;
-    metadata.redirect_uris = redirect_uris_list.items;
-
-    // Parse comma-separated grant types
-    if (grant_types_str) |types| {
-        var types_list: std.ArrayList([]const u8) = .empty;
-        defer {
-            for (types_list.items) |t| allocator.free(t);
-            types_list.deinit(allocator);
-        }
-
-        var iter = std.mem.splitScalar(u8, types, ',');
-        while (iter.next()) |t| {
-            const trimmed = std.mem.trim(u8, t, " ");
-            if (trimmed.len > 0) {
-                try types_list.append(allocator, try allocator.dupe(u8, trimmed));
-            }
-        }
-        metadata.grant_types = types_list.items;
-    }
-
-    // Parse comma-separated response types
-    if (response_types_str) |types| {
-        var types_list: std.ArrayList([]const u8) = .empty;
-        defer {
-            for (types_list.items) |t| allocator.free(t);
-            types_list.deinit(allocator);
-        }
-
-        var iter = std.mem.splitScalar(u8, types, ',');
-        while (iter.next()) |t| {
-            const trimmed = std.mem.trim(u8, t, " ");
-            if (trimmed.len > 0) {
-                try types_list.append(allocator, try allocator.dupe(u8, trimmed));
-            }
-        }
-        metadata.response_types = types_list.items;
-    }
-
-    if (scope) |s| metadata.scope = s;
-    if (token_auth_method) |m| metadata.token_endpoint_auth_method = m;
+    var options = try parseRegistrationOptions(allocator, args, 3, stderr, true, false);
+    defer options.deinit(allocator);
 
     // Create registration client
     var reg_client = try registration.DynamicRegistration.init(allocator, endpoint);
@@ -646,7 +728,7 @@ fn cmdRegister(allocator: Allocator, args: []const []const u8, stdout: anytype, 
     try stdout.print("Registering client with: {s}\n\n", .{endpoint});
 
     // Register the client
-    var response = reg_client.register(metadata) catch |err| {
+    var response = reg_client.register(options.metadata) catch |err| {
         try stderr.print("\nRegistration failed: {s}\n", .{@errorName(err)});
         return err;
     };
@@ -680,4 +762,120 @@ fn cmdRegister(allocator: Allocator, args: []const []const u8, stdout: anytype, 
         try stdout.print("\n    --client-secret {s}", .{secret});
     }
     try stdout.print("\n", .{});
+}
+
+fn cmdRegisterRead(allocator: Allocator, args: []const []const u8, stdout: anytype, stderr: anytype) !void {
+    if (args.len < 3) {
+        try stderr.print("Error: Missing registration client URI\n\n", .{});
+        try stderr.print("USAGE:\n    schlussel register-read <registration-client-uri> --registration-access-token <token>\n\n", .{});
+        return error.MissingArguments;
+    }
+
+    const endpoint = args[2];
+    const access_token = try parseRegistrationAccessToken(args, 3, stderr);
+
+    var reg_client = try registration.DynamicRegistration.init(allocator, endpoint);
+    defer reg_client.deinit();
+
+    try stdout.print("\n=== Dynamic Client Registration ===\n\n", .{});
+    try stdout.print("Reading registration from: {s}\n\n", .{endpoint});
+
+    var response = reg_client.read(access_token) catch |err| {
+        try stderr.print("\nRegistration read failed: {s}\n", .{@errorName(err)});
+        return err;
+    };
+    defer response.deinit();
+
+    try stdout.print("=== Registration Details ===\n\n", .{});
+    try stdout.print("Client ID: {s}\n", .{response.client_id});
+
+    if (response.client_secret) |secret| {
+        try stdout.print("Client Secret: {s}\n", .{secret});
+    }
+
+    if (response.client_id_issued_at) |issued_at| {
+        try stdout.print("Issued At: {d}\n", .{issued_at});
+    }
+
+    if (response.client_secret_expires_at) |expires_at| {
+        try stdout.print("Secret Expires At: {d}\n", .{expires_at});
+    }
+
+    if (response.registration_client_uri) |uri| {
+        try stdout.print("Registration URI: {s}\n", .{uri});
+    }
+}
+
+fn cmdRegisterUpdate(allocator: Allocator, args: []const []const u8, stdout: anytype, stderr: anytype) !void {
+    if (args.len < 3) {
+        try stderr.print("Error: Missing registration client URI\n\n", .{});
+        try stderr.print("USAGE:\n    schlussel register-update <registration-client-uri> [options]\n\n", .{});
+        try stderr.print("OPTIONS:\n", .{});
+        try stderr.print("    --registration-access-token <token>  Registration access token\n", .{});
+        try stderr.print("    --client-name <name>                 Human-readable client name\n", .{});
+        try stderr.print("    --redirect-uri <uri>                 Redirection URI (can be specified multiple times)\n", .{});
+        try stderr.print("    --grant-types <types>                Comma-separated grant types\n", .{});
+        try stderr.print("    --response-types <types>             Comma-separated response types\n", .{});
+        try stderr.print("    --scope <scope>                      OAuth scope\n", .{});
+        try stderr.print("    --token-auth-method <method>         Token endpoint auth method\n", .{});
+        return error.MissingArguments;
+    }
+
+    const endpoint = args[2];
+
+    var options = try parseRegistrationOptions(allocator, args, 3, stderr, false, true);
+    defer options.deinit(allocator);
+
+    const has_updates = options.redirect_uris_list.items.len > 0 or
+        options.grant_types_list.items.len > 0 or
+        options.response_types_list.items.len > 0 or
+        options.metadata.client_name.len > 0 or
+        options.metadata.scope != null or
+        options.metadata.token_endpoint_auth_method != null;
+
+    if (!has_updates) {
+        try stderr.print("Error: No update fields provided\n", .{});
+        return error.MissingRequiredOptions;
+    }
+
+    const access_token = options.access_token.?;
+
+    var reg_client = try registration.DynamicRegistration.init(allocator, endpoint);
+    defer reg_client.deinit();
+
+    try stdout.print("\n=== Dynamic Client Registration ===\n\n", .{});
+    try stdout.print("Updating registration at: {s}\n\n", .{endpoint});
+
+    var response = reg_client.update(access_token, options.metadata) catch |err| {
+        try stderr.print("\nRegistration update failed: {s}\n", .{@errorName(err)});
+        return err;
+    };
+    defer response.deinit();
+
+    try stdout.print("=== Update Successful ===\n\n", .{});
+    try stdout.print("Client ID: {s}\n", .{response.client_id});
+    if (response.registration_client_uri) |uri| {
+        try stdout.print("Registration URI: {s}\n", .{uri});
+    }
+}
+
+fn cmdRegisterDelete(allocator: Allocator, args: []const []const u8, stdout: anytype, stderr: anytype) !void {
+    if (args.len < 3) {
+        try stderr.print("Error: Missing registration client URI\n\n", .{});
+        try stderr.print("USAGE:\n    schlussel register-delete <registration-client-uri> --registration-access-token <token>\n\n", .{});
+        return error.MissingArguments;
+    }
+
+    const endpoint = args[2];
+    const access_token = try parseRegistrationAccessToken(args, 3, stderr);
+
+    var reg_client = try registration.DynamicRegistration.init(allocator, endpoint);
+    defer reg_client.deinit();
+
+    reg_client.delete(access_token) catch |err| {
+        try stderr.print("\nRegistration delete failed: {s}\n", .{@errorName(err)});
+        return err;
+    };
+
+    try stdout.print("\n=== Registration Deleted ===\n", .{});
 }

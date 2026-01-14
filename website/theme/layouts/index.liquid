@@ -18,14 +18,12 @@
   <section class="hero">
     <div class="hero__orb" aria-hidden="true"></div>
     <div class="hero__content">
-      <p class="hero__eyebrow">Universal OAuth2 client for concurrent agents</p>
-      <h1>Deterministic coordination across every platform</h1>
+      <p class="hero__eyebrow">Agent authentication runtime</p>
+      <h1>Auth runtime for every agent</h1>
       <p class="hero__lead">
-        Universal, cross-platform OAuth 2.0 client—library + CLI—written in Zig
-        to keep agents from undoing each other. Unified locking, PKCE, and device-code
-        flows with OS-native token storage keep every refresh serialized across
-        macOS, Linux, and Windows so agents can swarm without invalidating
-        shared tokens.
+        Codify how users authenticate, guide them through the right steps, and
+        keep sessions safe with native storage and locked refreshes across macOS,
+        Linux, and Windows.
       </p>
       <div class="hero__actions">
         <a class="cta" href="#manifesto">Read the manifesto</a>
@@ -41,18 +39,19 @@
     </div>
     <div class="section__body">
       <p>
-        Modern CLIs are no longer solo applications; they are agents coordinating
-        across CI fleets, workspaces, and autopilot loops. Without a unified,
-        platform-agnostic session catalog, every process risks refreshing the
-        same token simultaneously and invalidating the credentials it shares.
-        Schlussel keeps the handshake deterministic with shared locks, native
-        storage, and built-in refresh discipline.
+        Every runtime has rebuilt its own auth client and repeated the same
+        mistakes, from brittle refresh logic to token storage that drifts across
+        platforms. As agents scale across CI fleets, workspaces, and long-lived
+        loops, they now race each other for session access, and without locked
+        refreshes, one process invalidates another.
       </p>
       <p>
-        Deploying an OAuth2 client should never mean reimplementing refresh
-        choreography. If your tool needs an OAuth2 library or CLI, Schlussel
-        provides both with an opinionated stack that speaks the same language as
-        every agent, runtime, and operating system.
+        We believe there should be one disciplined solution, built in a
+        cross-compile friendly language like Zig, and shipped as a library and
+        CLI that can target every platform without reimplementation.
+        That single core should codify auth methods and user steps, then be bound
+        to the many languages that exist so every tool shares the same session
+        logic, storage semantics, and refresh guarantees.
       </p>
     </div>
   </section>
@@ -64,19 +63,19 @@
     </div>
     <div class="features__grid">
       <article>
-        <h3>Cross-process safekeeping</h3>
+        <h3>Session lifecycle guards</h3>
         <p>Refresh tokens run through serialized guards so race conditions never cancel another process's handshake.</p>
         <p>Scalable locking scopes keep throughput high while sticking to a single source of truth.</p>
       </article>
       <article>
-        <h3>Native storage</h3>
-        <p>Each OS puts secrets in its own credential manager—Keychain, Credential Manager, libsecret—so users recognize the surface.</p>
-        <p>The CLI never invents yet another vault, it just speaks the native language.</p>
+        <h3>Agent-ready interactions</h3>
+        <p>Formulas describe the exact steps a user must take, whether that is a device flow, browser callback, or API key setup.</p>
+        <p>Agents can surface consistent instructions instead of bespoke readmes.</p>
       </article>
       <article>
-        <h3>Formula-first workflows</h3>
-        <p>Bundled formulas describe flows, endpoints, required scopes, and registration steps.</p>
-        <p>Future-proof custom providers with third-party JSON or dynamic registration.</p>
+        <h3>Native storage</h3>
+        <p>Each OS puts secrets in its own credential manager, so users recognize the surface.</p>
+        <p>The CLI never invents yet another vault, it just speaks the native language.</p>
       </article>
     </div>
   </section>
@@ -89,12 +88,12 @@
     <div class="gs__grid">
       <article>
         <h3>Install CLI</h3>
-        <p>Bring the CLI to your agent fleet for device and authorization-code flows.</p>
+        <p>Bring the CLI to your agent fleet for OAuth2, device flows, and guided onboarding.</p>
         <p class="gs__note">Clone, build with Zig, run <code>schlussel login &lt;provider&gt;</code>, and tokens land in the OS credential manager with locking to avoid dueling refreshes.</p>
       </article>
       <article>
         <h3>Use the Zig library</h3>
-        <p>Embed the library and reuse the same formulas and storage backends.</p>
+        <p>Embed the library and reuse the same formulas, steps, and storage backends.</p>
         <p class="gs__note">Add the dependency in <code>build.zig.zon</code>, import <code>schlussel</code>, and use the same <code>OAuthConfig</code> helpers; refresh orchestration and locks mirror the CLI behavior.</p>
       </article>
       <article>
@@ -116,6 +115,18 @@
         <span>Browser (Wasm)</span>
       </div>
       <div class="binding-card">
+        <img src="/img/node.svg" alt="Node logo" />
+        <span>Node</span>
+      </div>
+      <div class="binding-card">
+        <img src="/img/bun.svg" alt="Bun logo" />
+        <span>Bun</span>
+      </div>
+      <div class="binding-card">
+        <img src="/img/deno.svg" alt="Deno logo" />
+        <span>Deno</span>
+      </div>
+      <div class="binding-card">
         <img src="/img/python.svg" alt="Python logo" />
         <span>Python</span>
       </div>
@@ -129,15 +140,15 @@
       </div>
       <div class="binding-card">
         <img src="/img/swift.svg" alt="Swift logo" />
-        <span aria-hidden="true"></span>
+        <span>Swift</span>
       </div>
     </div>
   </section>
 
   <section id="formulas" class="section formulas">
     <div class="section__title">
-      <h2>Declarative formulas</h2>
-      <p>Portable OAuth recipes stored in the filesystem and fused into the binary.</p>
+      <h2>Formulas:</h2>
+      <p>Declarative formulas that instruct the library on each IdP.</p>
     </div>
     <div class="formulas__grid">
       <div class="formula-card">
@@ -148,7 +159,7 @@
       <div class="formula-card">
         <h3>Third-party</h3>
         <p>Drop JSON on disk or pipe a custom file when your IdP behaves differently.</p>
-        <p>Formulas describe flows, endpoints, scopes, registration steps, and quirks.</p>
+        <p>Formulas describe flows, endpoints, scopes, registration steps, and user guidance.</p>
       </div>
       <div class="formula-card">
         <h3>Onboarding</h3>
@@ -157,31 +168,29 @@
       </div>
     </div>
     <div class="formula-example">
-      <div class="formula-example__text">
-        <h3>Example formula</h3>
-        <p>Endpoints, flows, scopes, and quirks stay in a single schema so agents read the same playbook.</p>
-        <p>Providers that deviate—slack nested responses, Claude role configs, Codex model hints, Tuist token nesting—are handled explicitly.</p>
-      </div>
-      <pre><code>{
+      <pre><code class="language-json">{
   "id": "claude",
-  "label": "Claude Code",
+  "label": "Claude Code (Anthropic)",
   "flows": ["authorization_code"],
   "endpoints": {
-    "authorize": "https://claude.ai/oauth/authorize",
+    "authorize": "https://console.anthropic.com/oauth/authorize",
     "token": "https://console.anthropic.com/v1/oauth/token"
   },
-  "scopes": ["user:profile","user:inference","org:create_api_key"],
+  "scope": "user:profile user:inference user:sessions:claude_code",
+  "public_clients": [
+    {
+      "name": "claude-code",
+      "id": "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
+      "source": "https://github.com/anthropics/claude-code",
+      "flows": ["authorization_code"]
+    }
+  ],
   "onboarding": {
-    "register_url": "https://console.anthropic.com/oauth/clients",
+    "register_url": "https://console.anthropic.com",
     "steps": [
-      "Register your CLI client in the Claude Console.",
-      "Wire up schlussel://oauth-callback or http://127.0.0.1/callback and include the CLI scopes.",
-      "Use the CLI API key endpoint to mint credentials and drop the secret into Schlussel."
+      "Sign up for an Anthropic account at https://console.anthropic.com",
+      "A Claude Pro, Max, Team, or Enterprise subscription is required for Claude Code access"
     ]
-  },
-  "quirks": {
-    "dynamic_registration_endpoint": "https://api.anthropic.com/api/oauth/claude_cli/create_api_key",
-    "extra_fields": ["roles"]
   }
 }</code></pre>
     </div>
@@ -189,7 +198,7 @@
 </main>
 
 <footer id="license" class="footer">
-  <p>schlussel — engineered for disciplined concurrency.</p>
+  <p>schlussel — guided auth, safe sessions.</p>
   <p><a href="/LICENSE">MIT License</a> © 2025 pepicrft.</p>
 </footer>
 {% include 'footer' %}

@@ -22,11 +22,16 @@
 //!
 //! std.debug.print("Client ID: {s}\n", .{response.client_id});
 //! ```
+//!
+//! For read/update/delete, initialize `DynamicRegistration` with the
+//! `registration_client_uri` returned during registration (not the initial
+//! registration endpoint).
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const http = std.http;
 const json = std.json;
+const net = std.net;
 const Uri = std.Uri;
 
 /// JSON parsing struct for client registration response
@@ -226,18 +231,7 @@ pub const DynamicRegistration = struct {
         const response_body = try response_writer.toOwnedSlice();
         defer self.allocator.free(response_body);
 
-        // Parse JSON response
-        const parsed = try json.parseFromSliceLeaky(ClientRegistrationResponseJson, self.allocator, response_body, .{});
-
-        return ClientRegistrationResponse{
-            .allocator = self.allocator,
-            .client_id = try self.allocator.dupe(u8, parsed.client_id),
-            .client_secret = if (parsed.client_secret) |s| try self.allocator.dupe(u8, s) else null,
-            .client_id_issued_at = parsed.client_id_issued_at,
-            .client_secret_expires_at = parsed.client_secret_expires_at,
-            .registration_access_token = if (parsed.registration_access_token) |s| try self.allocator.dupe(u8, s) else null,
-            .registration_client_uri = if (parsed.registration_client_uri) |s| try self.allocator.dupe(u8, s) else null,
-        };
+        return self.parseRegistrationResponse(response_body);
     }
 
     /// Write client metadata as JSON
@@ -313,28 +307,493 @@ pub const DynamicRegistration = struct {
         first.* = false;
     }
 
+    fn buildAuthHeader(self: *DynamicRegistration, registration_access_token: []const u8) ![]const u8 {
+        return std.fmt.allocPrint(self.allocator, "Bearer {s}", .{registration_access_token});
+    }
+
+    fn parseRegistrationResponse(self: *DynamicRegistration, response_body: []const u8) !ClientRegistrationResponse {
+        var parsed = try json.parseFromSlice(ClientRegistrationResponseJson, self.allocator, response_body, .{});
+        defer parsed.deinit();
+
+        return ClientRegistrationResponse{
+            .allocator = self.allocator,
+            .client_id = try self.allocator.dupe(u8, parsed.value.client_id),
+            .client_secret = if (parsed.value.client_secret) |s| try self.allocator.dupe(u8, s) else null,
+            .client_id_issued_at = parsed.value.client_id_issued_at,
+            .client_secret_expires_at = parsed.value.client_secret_expires_at,
+            .registration_access_token = if (parsed.value.registration_access_token) |s| try self.allocator.dupe(u8, s) else null,
+            .registration_client_uri = if (parsed.value.registration_client_uri) |s| try self.allocator.dupe(u8, s) else null,
+        };
+    }
+
     /// Read client configuration from the registration endpoint
     pub fn read(self: *DynamicRegistration, registration_access_token: []const u8) !ClientRegistrationResponse {
-        _ = registration_access_token;
-        _ = self;
-        // TODO: Implement GET request to registration endpoint
-        return error.NotImplemented;
+        const auth_header = try self.buildAuthHeader(registration_access_token);
+        defer self.allocator.free(auth_header);
+
+        var response_writer = std.Io.Writer.Allocating.init(self.allocator);
+        errdefer response_writer.deinit();
+
+        const result = try self.http_client.fetch(.{
+            .location = .{ .url = self.registration_endpoint },
+            .method = .GET,
+            .extra_headers = &.{
+                .{ .name = "Authorization", .value = auth_header },
+                .{ .name = "Accept", .value = "application/json" },
+            },
+            .response_writer = &response_writer.writer,
+        });
+
+        if (result.status != .ok) {
+            return error.RegistrationFailed;
+        }
+
+        const response_body = try response_writer.toOwnedSlice();
+        defer self.allocator.free(response_body);
+
+        return self.parseRegistrationResponse(response_body);
     }
 
     /// Update client configuration at the authorization server
     pub fn update(self: *DynamicRegistration, registration_access_token: []const u8, metadata: ClientMetadata) !ClientRegistrationResponse {
-        _ = registration_access_token;
-        _ = metadata;
-        _ = self;
-        // TODO: Implement PUT request to registration endpoint
-        return error.NotImplemented;
+        // Prepare request body
+        var body_buffer: std.ArrayList(u8) = .empty;
+        defer body_buffer.deinit(self.allocator);
+
+        try self.writeMetadataJson(body_buffer.writer(self.allocator), metadata);
+
+        const auth_header = try self.buildAuthHeader(registration_access_token);
+        defer self.allocator.free(auth_header);
+
+        var response_writer = std.Io.Writer.Allocating.init(self.allocator);
+        errdefer response_writer.deinit();
+
+        const result = try self.http_client.fetch(.{
+            .location = .{ .url = self.registration_endpoint },
+            .method = .PUT,
+            .payload = body_buffer.items,
+            .extra_headers = &.{
+                .{ .name = "Authorization", .value = auth_header },
+                .{ .name = "Content-Type", .value = "application/json" },
+                .{ .name = "Accept", .value = "application/json" },
+            },
+            .response_writer = &response_writer.writer,
+        });
+
+        if (result.status != .ok) {
+            return error.RegistrationFailed;
+        }
+
+        const response_body = try response_writer.toOwnedSlice();
+        defer self.allocator.free(response_body);
+
+        return self.parseRegistrationResponse(response_body);
     }
 
     /// Delete client registration
     pub fn delete(self: *DynamicRegistration, registration_access_token: []const u8) !void {
-        _ = registration_access_token;
-        _ = self;
-        // TODO: Implement DELETE request to registration endpoint
-        return error.NotImplemented;
+        const auth_header = try self.buildAuthHeader(registration_access_token);
+        defer self.allocator.free(auth_header);
+
+        var response_writer = std.Io.Writer.Allocating.init(self.allocator);
+        errdefer response_writer.deinit();
+
+        const result = try self.http_client.fetch(.{
+            .location = .{ .url = self.registration_endpoint },
+            .method = .DELETE,
+            .extra_headers = &.{
+                .{ .name = "Authorization", .value = auth_header },
+                .{ .name = "Accept", .value = "application/json" },
+            },
+            .response_writer = &response_writer.writer,
+        });
+
+        if (result.status != .ok and result.status != .no_content) {
+            return error.RegistrationFailed;
+        }
     }
 };
+
+test "dynamic registration metadata JSON includes required and optional fields" {
+    const allocator = std.testing.allocator;
+
+    var registration = try DynamicRegistration.init(allocator, "http://localhost/register");
+    defer registration.deinit();
+
+    var metadata = try ClientMetadata.init(allocator);
+    defer metadata.deinit();
+
+    metadata.client_name = "Test App";
+    metadata.redirect_uris = &[_][]const u8{"https://example.com/callback"};
+    metadata.grant_types = &[_][]const u8{"authorization_code", "refresh_token"};
+    metadata.response_types = &[_][]const u8{"code"};
+    metadata.scope = try allocator.dupe(u8, "read write");
+    metadata.token_endpoint_auth_method = try allocator.dupe(u8, "client_secret_basic");
+
+    var buffer: std.ArrayList(u8) = .empty;
+    defer buffer.deinit(allocator);
+
+    try registration.writeMetadataJson(buffer.writer(allocator), metadata);
+
+    const expected =
+        "{\"redirect_uris\": [\"https://example.com/callback\"],\"client_name\": \"Test App\",\"grant_types\": [\"authorization_code\",\"refresh_token\"],\"response_types\": [\"code\"],\"scope\": \"read write\",\"token_endpoint_auth_method\": \"client_secret_basic\"}";
+    try std.testing.expectEqualStrings(expected, buffer.items);
+}
+
+test "dynamic registration metadata JSON omits empty optional fields" {
+    const allocator = std.testing.allocator;
+
+    var registration = try DynamicRegistration.init(allocator, "http://localhost/register");
+    defer registration.deinit();
+
+    var metadata = try ClientMetadata.init(allocator);
+    defer metadata.deinit();
+
+    metadata.redirect_uris = &[_][]const u8{"https://example.com/callback"};
+
+    var buffer: std.ArrayList(u8) = .empty;
+    defer buffer.deinit(allocator);
+
+    try registration.writeMetadataJson(buffer.writer(allocator), metadata);
+
+    const expected = "{\"redirect_uris\": [\"https://example.com/callback\"]}";
+    try std.testing.expectEqualStrings(expected, buffer.items);
+}
+
+test "dynamic registration response parsing handles optional fields" {
+    const allocator = std.testing.allocator;
+
+    var registration = try DynamicRegistration.init(allocator, "http://localhost/register");
+    defer registration.deinit();
+
+    const response_json =
+        "{\"client_id\":\"abc\",\"client_secret\":\"shh\",\"client_id_issued_at\":1234,\"client_secret_expires_at\":5678,\"registration_access_token\":\"rat\",\"registration_client_uri\":\"https://example.com/clients/abc\"}";
+
+    var response = try registration.parseRegistrationResponse(response_json);
+    defer response.deinit();
+
+    try std.testing.expectEqualStrings("abc", response.client_id);
+    try std.testing.expectEqualStrings("shh", response.client_secret.?);
+    try std.testing.expectEqual(@as(i64, 1234), response.client_id_issued_at.?);
+    try std.testing.expectEqual(@as(i64, 5678), response.client_secret_expires_at.?);
+    try std.testing.expectEqualStrings("rat", response.registration_access_token.?);
+    try std.testing.expectEqualStrings("https://example.com/clients/abc", response.registration_client_uri.?);
+}
+
+test "dynamic registration response parsing handles minimal fields" {
+    const allocator = std.testing.allocator;
+
+    var registration = try DynamicRegistration.init(allocator, "http://localhost/register");
+    defer registration.deinit();
+
+    const response_json = "{\"client_id\":\"abc\"}";
+
+    var response = try registration.parseRegistrationResponse(response_json);
+    defer response.deinit();
+
+    try std.testing.expectEqualStrings("abc", response.client_id);
+    try std.testing.expect(response.client_secret == null);
+    try std.testing.expect(response.client_id_issued_at == null);
+    try std.testing.expect(response.client_secret_expires_at == null);
+    try std.testing.expect(response.registration_access_token == null);
+    try std.testing.expect(response.registration_client_uri == null);
+}
+
+const TestRegistrationServer = struct {
+    server: net.Server,
+    port: u16,
+    stats: Stats = .{},
+    shutdown_requested: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+    active: bool = true,
+
+    const ServerError = error{
+        InvalidRequest,
+        ConnectionClosed,
+    };
+
+    const Stats = struct {
+        saw_post: bool = false,
+        saw_get: bool = false,
+        saw_put: bool = false,
+        saw_delete: bool = false,
+        saw_auth_header: bool = false,
+        saw_post_body: bool = false,
+        saw_put_body: bool = false,
+        err: ?anyerror = null,
+    };
+
+    fn init() !TestRegistrationServer {
+        const address = net.Address.initIp6(.{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 }, 0, 0, 0);
+        const server = try address.listen(.{
+            .reuse_address = true,
+        });
+        const port = server.listen_address.getPort();
+        return .{
+            .server = server,
+            .port = port,
+        };
+    }
+
+    fn deinit(self: *TestRegistrationServer) void {
+        if (self.active) {
+            self.server.deinit();
+            self.active = false;
+        }
+    }
+
+    fn urlFor(self: *TestRegistrationServer, allocator: Allocator, path: []const u8) ![]const u8 {
+        return std.fmt.allocPrint(allocator, "http://localhost:{d}{s}", .{ self.port, path });
+    }
+
+    fn shutdown(self: *TestRegistrationServer) void {
+        self.shutdown_requested.store(true, .release);
+        if (self.active) {
+            self.server.deinit();
+            self.active = false;
+        }
+    }
+
+    fn run(
+        self: *TestRegistrationServer,
+        register_path: []const u8,
+        client_path: []const u8,
+        client_url: []const u8,
+        token: []const u8,
+    ) void {
+        var handled: usize = 0;
+        while (handled < 4 and !self.shutdown_requested.load(.acquire)) : (handled += 1) {
+            var connection = self.server.accept() catch |err| {
+                if (self.shutdown_requested.load(.acquire)) {
+                    return;
+                }
+                self.stats.err = err;
+                return;
+            };
+            defer connection.stream.close();
+
+            var buf: [8192]u8 = undefined;
+            const bytes_read = connection.stream.read(&buf) catch |err| {
+                self.stats.err = err;
+                return;
+            };
+            if (bytes_read == 0) {
+                self.stats.err = ServerError.ConnectionClosed;
+                return;
+            }
+
+            const request = buf[0..bytes_read];
+            const first_space = std.mem.indexOfScalar(u8, request, ' ') orelse {
+                self.stats.err = ServerError.InvalidRequest;
+                return;
+            };
+            const method = request[0..first_space];
+            const rest = request[first_space + 1 ..];
+            const second_space = std.mem.indexOfScalar(u8, rest, ' ') orelse {
+                self.stats.err = ServerError.InvalidRequest;
+                return;
+            };
+            const path = rest[0..second_space];
+
+            const header_end = std.mem.indexOf(u8, request, "\r\n\r\n") orelse request.len;
+            const headers = request[0..header_end];
+            const body = if (header_end + 4 <= request.len) request[header_end + 4 ..] else "";
+
+            const auth_ok = std.mem.indexOf(u8, headers, "Authorization: Bearer ") != null and
+                std.mem.indexOf(u8, headers, token) != null;
+            const accept_json = std.mem.indexOf(u8, headers, "Accept: application/json") != null;
+            const content_json = std.mem.indexOf(u8, headers, "Content-Type: application/json") != null;
+
+            if (std.mem.eql(u8, method, "POST")) {
+                if (!std.mem.eql(u8, path, register_path)) {
+                    self.stats.err = ServerError.InvalidRequest;
+                    return;
+                }
+                if (!accept_json or !content_json) {
+                    self.stats.err = ServerError.InvalidRequest;
+                    return;
+                }
+                self.stats.saw_post = true;
+                if (std.mem.indexOf(u8, body, "Test App") != null) {
+                    self.stats.saw_post_body = true;
+                }
+
+                var response_body_buf: [512]u8 = undefined;
+                const response_body = std.fmt.bufPrint(
+                    &response_body_buf,
+                    "{{\"client_id\":\"abc\",\"registration_access_token\":\"{s}\",\"registration_client_uri\":\"{s}\"}}",
+                    .{ token, client_url },
+                ) catch |err| {
+                    self.stats.err = err;
+                    return;
+                };
+
+                var response_buf: [1024]u8 = undefined;
+                const response = std.fmt.bufPrint(
+                    &response_buf,
+                    "HTTP/1.1 201 Created\r\nContent-Type: application/json\r\nContent-Length: {d}\r\nConnection: close\r\n\r\n{s}",
+                    .{ response_body.len, response_body },
+                ) catch |err| {
+                    self.stats.err = err;
+                    return;
+                };
+                connection.stream.writeAll(response) catch |err| {
+                    self.stats.err = err;
+                    return;
+                };
+            } else if (std.mem.eql(u8, method, "GET")) {
+                if (!std.mem.eql(u8, path, client_path)) {
+                    self.stats.err = ServerError.InvalidRequest;
+                    return;
+                }
+                if (!accept_json or !auth_ok) {
+                    self.stats.err = ServerError.InvalidRequest;
+                    return;
+                }
+                self.stats.saw_get = true;
+                self.stats.saw_auth_header = self.stats.saw_auth_header or auth_ok;
+
+                const response_body = "{\"client_id\":\"abc\"}";
+                var response_buf: [256]u8 = undefined;
+                const response = std.fmt.bufPrint(
+                    &response_buf,
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {d}\r\nConnection: close\r\n\r\n{s}",
+                    .{ response_body.len, response_body },
+                ) catch |err| {
+                    self.stats.err = err;
+                    return;
+                };
+                connection.stream.writeAll(response) catch |err| {
+                    self.stats.err = err;
+                    return;
+                };
+            } else if (std.mem.eql(u8, method, "PUT")) {
+                if (!std.mem.eql(u8, path, client_path)) {
+                    self.stats.err = ServerError.InvalidRequest;
+                    return;
+                }
+                if (!accept_json or !content_json or !auth_ok) {
+                    self.stats.err = ServerError.InvalidRequest;
+                    return;
+                }
+                self.stats.saw_put = true;
+                self.stats.saw_auth_header = self.stats.saw_auth_header or auth_ok;
+                if (std.mem.indexOf(u8, body, "Updated App") != null) {
+                    self.stats.saw_put_body = true;
+                }
+
+                const response_body = "{\"client_id\":\"abc\"}";
+                var response_buf: [256]u8 = undefined;
+                const response = std.fmt.bufPrint(
+                    &response_buf,
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {d}\r\nConnection: close\r\n\r\n{s}",
+                    .{ response_body.len, response_body },
+                ) catch |err| {
+                    self.stats.err = err;
+                    return;
+                };
+                connection.stream.writeAll(response) catch |err| {
+                    self.stats.err = err;
+                    return;
+                };
+            } else if (std.mem.eql(u8, method, "DELETE")) {
+                if (!std.mem.eql(u8, path, client_path)) {
+                    self.stats.err = ServerError.InvalidRequest;
+                    return;
+                }
+                if (!accept_json or !auth_ok) {
+                    self.stats.err = ServerError.InvalidRequest;
+                    return;
+                }
+                self.stats.saw_delete = true;
+                self.stats.saw_auth_header = self.stats.saw_auth_header or auth_ok;
+
+                const response = "HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+                connection.stream.writeAll(response) catch |err| {
+                    self.stats.err = err;
+                    return;
+                };
+            } else {
+                self.stats.err = ServerError.InvalidRequest;
+                return;
+            }
+
+            if (self.shutdown_requested.load(.acquire)) {
+                return;
+            }
+        }
+    }
+};
+
+test "dynamic registration HTTP lifecycle" {
+    const allocator = std.testing.allocator;
+
+    var server = try TestRegistrationServer.init();
+    defer server.deinit();
+
+    const register_path = "/register";
+    const client_path = "/clients/abc";
+    const token = "rat";
+
+    const register_url = try server.urlFor(allocator, register_path);
+    defer allocator.free(register_url);
+    const client_url = try server.urlFor(allocator, client_path);
+    defer allocator.free(client_url);
+
+    var thread = try std.Thread.spawn(
+        .{},
+        TestRegistrationServer.run,
+        .{ &server, register_path, client_path, client_url, token },
+    );
+    var joined = false;
+    defer {
+        if (!joined) thread.join();
+    }
+
+    var registration_client = try DynamicRegistration.init(allocator, register_url);
+    defer registration_client.deinit();
+
+    var metadata = try ClientMetadata.init(allocator);
+    defer metadata.deinit();
+    metadata.client_name = "Test App";
+    metadata.redirect_uris = &[_][]const u8{"https://example.com/callback"};
+
+    var response = try registration_client.register(metadata);
+    defer response.deinit();
+
+    try std.testing.expectEqualStrings("abc", response.client_id);
+    try std.testing.expectEqualStrings(token, response.registration_access_token.?);
+    try std.testing.expectEqualStrings(client_url, response.registration_client_uri.?);
+
+    var management_client = try DynamicRegistration.init(allocator, response.registration_client_uri.?);
+    defer management_client.deinit();
+
+    var read_response = try management_client.read(token);
+    defer read_response.deinit();
+    try std.testing.expectEqualStrings("abc", read_response.client_id);
+
+    var update_metadata = try ClientMetadata.init(allocator);
+    defer update_metadata.deinit();
+    update_metadata.client_name = "Updated App";
+    update_metadata.redirect_uris = &[_][]const u8{"https://example.com/callback"};
+
+    var update_response = try management_client.update(token, update_metadata);
+    defer update_response.deinit();
+    try std.testing.expectEqualStrings("abc", update_response.client_id);
+
+    try management_client.delete(token);
+
+    server.shutdown();
+    thread.join();
+    joined = true;
+
+    if (server.stats.err) |err| {
+        return err;
+    }
+    try std.testing.expect(server.stats.saw_post);
+    try std.testing.expect(server.stats.saw_get);
+    try std.testing.expect(server.stats.saw_put);
+    try std.testing.expect(server.stats.saw_delete);
+    try std.testing.expect(server.stats.saw_post_body);
+    try std.testing.expect(server.stats.saw_put_body);
+    try std.testing.expect(server.stats.saw_auth_header);
+}

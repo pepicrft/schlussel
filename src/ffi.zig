@@ -13,6 +13,7 @@
 //!
 //! - Functions that can fail return NULL pointers or error codes
 //! - Use the `SchlusselError` enum values to check specific errors
+//! - Use `schlussel_last_error_code` / `schlussel_last_error_message` for details
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -39,6 +40,73 @@ var gpa = std.heap.GeneralPurposeAllocator(.{}){};
 
 fn getAllocator() std.mem.Allocator {
     return gpa.allocator();
+}
+
+threadlocal var last_error_code: c_int = 0;
+threadlocal var last_error_message: [256]u8 = undefined;
+threadlocal var last_error_message_len: usize = 0;
+
+fn clearLastError() void {
+    last_error_code = 0;
+    last_error_message_len = 0;
+}
+
+fn errorCodeFromAny(err: anyerror) c_int {
+    return switch (err) {
+        error.InvalidParameter => error_types.toErrorCode(error.InvalidParameter),
+        error.StorageError => error_types.toErrorCode(error.StorageError),
+        error.HttpError => error_types.toErrorCode(error.HttpError),
+        error.AuthorizationDenied => error_types.toErrorCode(error.AuthorizationDenied),
+        error.TokenExpired => error_types.toErrorCode(error.TokenExpired),
+        error.NoRefreshToken => error_types.toErrorCode(error.NoRefreshToken),
+        error.InvalidState => error_types.toErrorCode(error.InvalidState),
+        error.DeviceCodeExpired => error_types.toErrorCode(error.DeviceCodeExpired),
+        error.AuthorizationPending => error_types.toErrorCode(error.AuthorizationPending),
+        error.SlowDown => error_types.toErrorCode(error.SlowDown),
+        error.JsonError => error_types.toErrorCode(error.JsonError),
+        error.IoError => error_types.toErrorCode(error.IoError),
+        error.ServerError => error_types.toErrorCode(error.ServerError),
+        error.CallbackServerError => error_types.toErrorCode(error.CallbackServerError),
+        error.ConfigurationError => error_types.toErrorCode(error.ConfigurationError),
+        error.LockError => error_types.toErrorCode(error.LockError),
+        error.UnsupportedOperation => error_types.toErrorCode(error.UnsupportedOperation),
+        error.OutOfMemory => error_types.toErrorCode(error.OutOfMemory),
+        error.ConnectionFailed => error_types.toErrorCode(error.ConnectionFailed),
+        error.Timeout => error_types.toErrorCode(error.Timeout),
+        error.InsecureEndpoint => error_types.toErrorCode(error.ConfigurationError),
+        error.RegistrationFailed => error_types.toErrorCode(error.ServerError),
+        else => 99, // SCHLUSSEL_ERROR_UNKNOWN
+    };
+}
+
+fn setLastError(err: anyerror) void {
+    last_error_code = errorCodeFromAny(err);
+    const name = @errorName(err);
+    last_error_message_len = @min(name.len, last_error_message.len - 1);
+    @memcpy(last_error_message[0..last_error_message_len], name[0..last_error_message_len]);
+}
+
+fn setLastErrorMessage(code: c_int, message: []const u8) void {
+    last_error_code = code;
+    last_error_message_len = @min(message.len, last_error_message.len - 1);
+    @memcpy(last_error_message[0..last_error_message_len], message[0..last_error_message_len]);
+}
+
+/// Get the last error code for the calling thread
+export fn schlussel_last_error_code() c_int {
+    return last_error_code;
+}
+
+/// Get the last error message for the calling thread
+/// Caller must free the returned string with schlussel_string_free
+export fn schlussel_last_error_message() ?[*:0]u8 {
+    if (last_error_message_len == 0) return null;
+    return dupeToC(last_error_message[0..last_error_message_len]);
+}
+
+/// Clear the last error for the calling thread
+export fn schlussel_clear_last_error() void {
+    clearLastError();
 }
 
 /// Opaque client handle
@@ -79,6 +147,11 @@ export fn schlussel_client_new_github(
     scopes: [*c]const u8,
     app_name: [*c]const u8,
 ) ?*SchlusselClient {
+    clearLastError();
+    if (client_id == null or app_name == null) {
+        setLastError(error.InvalidParameter);
+        return null;
+    }
     return createClient(
         OAuthConfig.github(
             std.mem.span(client_id),
@@ -94,6 +167,11 @@ export fn schlussel_client_new_google(
     scopes: [*c]const u8,
     app_name: [*c]const u8,
 ) ?*SchlusselClient {
+    clearLastError();
+    if (client_id == null or app_name == null) {
+        setLastError(error.InvalidParameter);
+        return null;
+    }
     return createClient(
         OAuthConfig.google(
             std.mem.span(client_id),
@@ -112,6 +190,11 @@ export fn schlussel_client_new(
     scopes: [*c]const u8,
     device_authorization_endpoint: [*c]const u8,
 ) ?*SchlusselClient {
+    clearLastError();
+    if (client_id == null or authorization_endpoint == null or token_endpoint == null or redirect_uri == null) {
+        setLastError(error.InvalidParameter);
+        return null;
+    }
     const config = OAuthConfig{
         .client_id = std.mem.span(client_id),
         .authorization_endpoint = std.mem.span(authorization_endpoint),
@@ -135,16 +218,21 @@ fn createClient(config: OAuthConfig, app_name: []const u8) ?*SchlusselClient {
         return createClientWithFileStorage(config, app_name);
     };
 
-    const storage_ptr = allocator.create(SecureStorage) catch return null;
+    const storage_ptr = allocator.create(SecureStorage) catch |err| {
+        setLastError(err);
+        return null;
+    };
     storage_ptr.* = storage;
 
-    const client_ptr = allocator.create(OAuthClient) catch {
+    const client_ptr = allocator.create(OAuthClient) catch |err| {
+        setLastError(err);
         allocator.destroy(storage_ptr);
         return null;
     };
     client_ptr.* = OAuthClient.init(allocator, config, storage_ptr.storage());
 
-    const handle = allocator.create(SchlusselClient) catch {
+    const handle = allocator.create(SchlusselClient) catch |err| {
+        setLastError(err);
         allocator.destroy(client_ptr);
         allocator.destroy(storage_ptr);
         return null;
@@ -161,18 +249,26 @@ fn createClient(config: OAuthConfig, app_name: []const u8) ?*SchlusselClient {
 fn createClientWithFileStorage(config: OAuthConfig, app_name: []const u8) ?*SchlusselClient {
     const allocator = getAllocator();
 
-    const storage = FileStorage.init(allocator, app_name) catch return null;
+    const storage = FileStorage.init(allocator, app_name) catch |err| {
+        setLastError(err);
+        return null;
+    };
 
-    const storage_ptr = allocator.create(FileStorage) catch return null;
+    const storage_ptr = allocator.create(FileStorage) catch |err| {
+        setLastError(err);
+        return null;
+    };
     storage_ptr.* = storage;
 
-    const client_ptr = allocator.create(OAuthClient) catch {
+    const client_ptr = allocator.create(OAuthClient) catch |err| {
+        setLastError(err);
         allocator.destroy(storage_ptr);
         return null;
     };
     client_ptr.* = OAuthClient.init(allocator, config, storage_ptr.storage());
 
-    const handle = allocator.create(SchlusselClient) catch {
+    const handle = allocator.create(SchlusselClient) catch |err| {
+        setLastError(err);
         allocator.destroy(client_ptr);
         allocator.destroy(storage_ptr);
         return null;
@@ -191,16 +287,21 @@ fn createClientWithMemoryStorage(config: OAuthConfig) ?*SchlusselClient {
 
     const storage = MemoryStorage.init(allocator);
 
-    const storage_ptr = allocator.create(MemoryStorage) catch return null;
+    const storage_ptr = allocator.create(MemoryStorage) catch |err| {
+        setLastError(err);
+        return null;
+    };
     storage_ptr.* = storage;
 
-    const client_ptr = allocator.create(OAuthClient) catch {
+    const client_ptr = allocator.create(OAuthClient) catch |err| {
+        setLastError(err);
         allocator.destroy(storage_ptr);
         return null;
     };
     client_ptr.* = OAuthClient.init(allocator, config, storage_ptr.storage());
 
-    const handle = allocator.create(SchlusselClient) catch {
+    const handle = allocator.create(SchlusselClient) catch |err| {
+        setLastError(err);
         allocator.destroy(client_ptr);
         allocator.destroy(storage_ptr);
         return null;
@@ -255,18 +356,27 @@ export fn schlussel_client_free(client: ?*SchlusselClient) void {
 
 /// Perform Device Code Flow authorization
 export fn schlussel_authorize_device(client: ?*SchlusselClient) ?*SchlusselToken {
-    const handle = client orelse return null;
+    clearLastError();
+    const handle = client orelse {
+        setLastError(error.InvalidParameter);
+        return null;
+    };
     const allocator = getAllocator();
 
-    var token = handle.client.authorizeDevice() catch return null;
+    var token = handle.client.authorizeDevice() catch |err| {
+        setLastError(err);
+        return null;
+    };
 
-    const token_ptr = allocator.create(Token) catch {
+    const token_ptr = allocator.create(Token) catch |err| {
+        setLastError(err);
         token.deinit();
         return null;
     };
     token_ptr.* = token;
 
-    const token_handle = allocator.create(SchlusselToken) catch {
+    const token_handle = allocator.create(SchlusselToken) catch |err| {
+        setLastError(err);
         token.deinit();
         allocator.destroy(token_ptr);
         return null;
@@ -278,18 +388,27 @@ export fn schlussel_authorize_device(client: ?*SchlusselClient) ?*SchlusselToken
 
 /// Perform Authorization Code Flow with callback server
 export fn schlussel_authorize(client: ?*SchlusselClient) ?*SchlusselToken {
-    const handle = client orelse return null;
+    clearLastError();
+    const handle = client orelse {
+        setLastError(error.InvalidParameter);
+        return null;
+    };
     const allocator = getAllocator();
 
-    var token = handle.client.authorize() catch return null;
+    var token = handle.client.authorize() catch |err| {
+        setLastError(err);
+        return null;
+    };
 
-    const token_ptr = allocator.create(Token) catch {
+    const token_ptr = allocator.create(Token) catch |err| {
+        setLastError(err);
         token.deinit();
         return null;
     };
     token_ptr.* = token;
 
-    const token_handle = allocator.create(SchlusselToken) catch {
+    const token_handle = allocator.create(SchlusselToken) catch |err| {
+        setLastError(err);
         token.deinit();
         allocator.destroy(token_ptr);
         return null;
@@ -309,11 +428,23 @@ export fn schlussel_save_token(
     key: [*c]const u8,
     token: ?*SchlusselToken,
 ) c_int {
-    const handle = client orelse return 1; // SCHLUSSEL_ERROR_INVALID_PARAMETER
-    const token_handle = token orelse return 1;
+    clearLastError();
+    const handle = client orelse {
+        setLastError(error.InvalidParameter);
+        return errorCodeFromAny(error.InvalidParameter);
+    };
+    const token_handle = token orelse {
+        setLastError(error.InvalidParameter);
+        return errorCodeFromAny(error.InvalidParameter);
+    };
+    if (key == null) {
+        setLastError(error.InvalidParameter);
+        return errorCodeFromAny(error.InvalidParameter);
+    }
 
-    handle.client.saveToken(std.mem.span(key), token_handle.token.*) catch {
-        return 2; // SCHLUSSEL_ERROR_STORAGE
+    handle.client.saveToken(std.mem.span(key), token_handle.token.*) catch |err| {
+        setLastError(err);
+        return errorCodeFromAny(err);
     };
 
     return 0; // SCHLUSSEL_OK
@@ -324,18 +455,31 @@ export fn schlussel_get_token(
     client: ?*SchlusselClient,
     key: [*c]const u8,
 ) ?*SchlusselToken {
-    const handle = client orelse return null;
+    clearLastError();
+    const handle = client orelse {
+        setLastError(error.InvalidParameter);
+        return null;
+    };
+    if (key == null) {
+        setLastError(error.InvalidParameter);
+        return null;
+    }
     const allocator = getAllocator();
 
-    var token = (handle.client.getToken(std.mem.span(key)) catch return null) orelse return null;
+    var token = (handle.client.getToken(std.mem.span(key)) catch |err| {
+        setLastError(err);
+        return null;
+    }) orelse return null;
 
-    const token_ptr = allocator.create(Token) catch {
+    const token_ptr = allocator.create(Token) catch |err| {
+        setLastError(err);
         token.deinit();
         return null;
     };
     token_ptr.* = token;
 
-    const token_handle = allocator.create(SchlusselToken) catch {
+    const token_handle = allocator.create(SchlusselToken) catch |err| {
+        setLastError(err);
         token.deinit();
         allocator.destroy(token_ptr);
         return null;
@@ -350,10 +494,19 @@ export fn schlussel_delete_token(
     client: ?*SchlusselClient,
     key: [*c]const u8,
 ) c_int {
-    const handle = client orelse return 1;
+    clearLastError();
+    const handle = client orelse {
+        setLastError(error.InvalidParameter);
+        return errorCodeFromAny(error.InvalidParameter);
+    };
+    if (key == null) {
+        setLastError(error.InvalidParameter);
+        return errorCodeFromAny(error.InvalidParameter);
+    }
 
-    handle.client.deleteToken(std.mem.span(key)) catch {
-        return 2; // SCHLUSSEL_ERROR_STORAGE
+    handle.client.deleteToken(std.mem.span(key)) catch |err| {
+        setLastError(err);
+        return errorCodeFromAny(err);
     };
 
     return 0; // SCHLUSSEL_OK
@@ -364,18 +517,31 @@ export fn schlussel_refresh_token(
     client: ?*SchlusselClient,
     refresh_token: [*c]const u8,
 ) ?*SchlusselToken {
-    const handle = client orelse return null;
+    clearLastError();
+    const handle = client orelse {
+        setLastError(error.InvalidParameter);
+        return null;
+    };
+    if (refresh_token == null) {
+        setLastError(error.InvalidParameter);
+        return null;
+    }
     const allocator = getAllocator();
 
-    var token = handle.client.refreshToken(std.mem.span(refresh_token)) catch return null;
+    var token = handle.client.refreshToken(std.mem.span(refresh_token)) catch |err| {
+        setLastError(err);
+        return null;
+    };
 
-    const token_ptr = allocator.create(Token) catch {
+    const token_ptr = allocator.create(Token) catch |err| {
+        setLastError(err);
         token.deinit();
         return null;
     };
     token_ptr.* = token;
 
-    const token_handle = allocator.create(SchlusselToken) catch {
+    const token_handle = allocator.create(SchlusselToken) catch |err| {
+        setLastError(err);
         token.deinit();
         allocator.destroy(token_ptr);
         return null;
@@ -461,6 +627,87 @@ fn dupeToC(str: []const u8) ?[*:0]u8 {
     return result;
 }
 
+fn freeStringSlice(allocator: Allocator, slice: []const []const u8) void {
+    for (slice) |item| {
+        allocator.free(item);
+    }
+    allocator.free(slice);
+}
+
+const RegistrationMetadata = struct {
+    metadata: ClientMetadata,
+    redirect_uris_list: std.ArrayList([]const u8),
+    grant_types: ?[]const []const u8 = null,
+    response_types: ?[]const []const u8 = null,
+
+    fn init(
+        allocator: Allocator,
+        redirect_uris: [*c]const [*c]const u8,
+        redirect_uris_count: usize,
+        client_name: [*c]const u8,
+        grant_types: [*c]const u8,
+        response_types: [*c]const u8,
+        scope: [*c]const u8,
+        token_auth_method: [*c]const u8,
+    ) !RegistrationMetadata {
+        var metadata = try ClientMetadata.init(allocator);
+        errdefer metadata.deinit();
+
+        const uris_ptr: [*]const [*:0]const u8 = @ptrCast(redirect_uris);
+        const uris_slice = uris_ptr[0..redirect_uris_count];
+        var redirect_uris_list: std.ArrayList([]const u8) = .empty;
+        errdefer {
+            for (redirect_uris_list.items) |uri| allocator.free(uri);
+            redirect_uris_list.deinit(allocator);
+        }
+
+        for (uris_slice) |uri_c_str| {
+            const uri_dup = try allocator.dupe(u8, std.mem.span(uri_c_str));
+            try redirect_uris_list.append(allocator, uri_dup);
+        }
+        metadata.redirect_uris = redirect_uris_list.items;
+
+        if (client_name != null) {
+            metadata.client_name = std.mem.span(client_name);
+        }
+
+        if (grant_types != null) {
+            metadata.grant_types = try parseCommaSeparated(allocator, std.mem.span(grant_types));
+        }
+
+        if (response_types != null) {
+            metadata.response_types = try parseCommaSeparated(allocator, std.mem.span(response_types));
+        }
+
+        if (scope != null) {
+            metadata.scope = std.mem.span(scope);
+        }
+
+        if (token_auth_method != null) {
+            metadata.token_endpoint_auth_method = std.mem.span(token_auth_method);
+        }
+
+        return .{
+            .metadata = metadata,
+            .redirect_uris_list = redirect_uris_list,
+            .grant_types = metadata.grant_types,
+            .response_types = metadata.response_types,
+        };
+    }
+
+    fn deinit(self: *RegistrationMetadata, allocator: Allocator) void {
+        self.metadata.deinit();
+        for (self.redirect_uris_list.items) |uri| allocator.free(uri);
+        self.redirect_uris_list.deinit(allocator);
+        if (self.grant_types) |slice| {
+            freeStringSlice(allocator, slice);
+        }
+        if (self.response_types) |slice| {
+            freeStringSlice(allocator, slice);
+        }
+    }
+};
+
 // ============================================================================
 // Dynamic Client Registration functions
 // ============================================================================
@@ -468,16 +715,26 @@ fn dupeToC(str: []const u8) ?[*:0]u8 {
 /// Create a new dynamic registration client
 export fn schlussel_registration_new(endpoint: [*c]const u8) ?*SchlusselRegistrationClient {
     const allocator = getAllocator();
+    clearLastError();
+    if (endpoint == null) {
+        setLastError(error.InvalidParameter);
+        return null;
+    }
 
-    var client = DynamicRegistration.init(allocator, std.mem.span(endpoint)) catch return null;
+    var client = DynamicRegistration.init(allocator, std.mem.span(endpoint)) catch |err| {
+        setLastError(err);
+        return null;
+    };
 
-    const client_ptr = allocator.create(DynamicRegistration) catch {
+    const client_ptr = allocator.create(DynamicRegistration) catch |err| {
+        setLastError(err);
         client.deinit();
         return null;
     };
     client_ptr.* = client;
 
-    const handle = allocator.create(SchlusselRegistrationClient) catch {
+    const handle = allocator.create(SchlusselRegistrationClient) catch |err| {
+        setLastError(err);
         client.deinit();
         allocator.destroy(client_ptr);
         return null;
@@ -520,59 +777,47 @@ export fn schlussel_register_client(
     scope: [*c]const u8,
     token_auth_method: [*c]const u8,
 ) ?*SchlusselRegistrationResponse {
-    const handle = reg_client orelse return null;
+    clearLastError();
+    const handle = reg_client orelse {
+        setLastError(error.InvalidParameter);
+        return null;
+    };
+    if (redirect_uris == null or redirect_uris_count == 0) {
+        setLastError(error.InvalidParameter);
+        return null;
+    }
     const allocator = getAllocator();
 
-    // Create metadata
-    var metadata = ClientMetadata.init(allocator) catch return null;
-    errdefer metadata.deinit();
-
-    // Set redirect URIs
-    const uris_ptr: [*]const [*:0]const u8 = @ptrCast(redirect_uris);
-    const uris_slice = uris_ptr[0..redirect_uris_count];
-    var redirect_uris_list: std.ArrayList([]const u8) = .empty;
-    defer {
-        for (redirect_uris_list.items) |uri| allocator.free(uri);
-        redirect_uris_list.deinit(allocator);
-    }
-
-    for (uris_slice) |uri_c_str| {
-        const uri_dup = allocator.dupe(u8, std.mem.span(uri_c_str)) catch return null;
-        redirect_uris_list.append(allocator, uri_dup) catch return null;
-    }
-    metadata.redirect_uris = allocator.dupe([]const u8, redirect_uris_list.items) catch return null;
-
-    // Set optional fields
-    if (client_name != null) {
-        metadata.client_name = std.mem.span(client_name);
-    }
-
-    if (grant_types != null) {
-        metadata.grant_types = parseCommaSeparated(allocator, std.mem.span(grant_types)) catch return null;
-    }
-
-    if (response_types != null) {
-        metadata.response_types = parseCommaSeparated(allocator, std.mem.span(response_types)) catch return null;
-    }
-
-    if (scope != null) {
-        metadata.scope = std.mem.span(scope);
-    }
-
-    if (token_auth_method != null) {
-        metadata.token_endpoint_auth_method = std.mem.span(token_auth_method);
-    }
+    var metadata = RegistrationMetadata.init(
+        allocator,
+        redirect_uris,
+        redirect_uris_count,
+        client_name,
+        grant_types,
+        response_types,
+        scope,
+        token_auth_method,
+    ) catch |err| {
+        setLastError(err);
+        return null;
+    };
+    defer metadata.deinit(allocator);
 
     // Register the client
-    var response = handle.client.register(metadata) catch return null;
+    var response = handle.client.register(metadata.metadata) catch |err| {
+        setLastError(err);
+        return null;
+    };
 
-    const response_ptr = allocator.create(ClientRegistrationResponse) catch {
+    const response_ptr = allocator.create(ClientRegistrationResponse) catch |err| {
+        setLastError(err);
         response.deinit();
         return null;
     };
     response_ptr.* = response;
 
-    const response_handle = allocator.create(SchlusselRegistrationResponse) catch {
+    const response_handle = allocator.create(SchlusselRegistrationResponse) catch |err| {
+        setLastError(err);
         response.deinit();
         allocator.destroy(response_ptr);
         return null;
@@ -580,6 +825,137 @@ export fn schlussel_register_client(
     response_handle.* = .{ .response = response_ptr };
 
     return response_handle;
+}
+
+/// Read client configuration from the registration endpoint
+///
+/// Returns: Registration response handle on success, NULL on error
+export fn schlussel_registration_read(
+    reg_client: ?*SchlusselRegistrationClient,
+    registration_access_token: [*c]const u8,
+) ?*SchlusselRegistrationResponse {
+    clearLastError();
+    const handle = reg_client orelse {
+        setLastError(error.InvalidParameter);
+        return null;
+    };
+    if (registration_access_token == null) {
+        setLastError(error.InvalidParameter);
+        return null;
+    }
+    const allocator = getAllocator();
+
+    var response = handle.client.read(std.mem.span(registration_access_token)) catch |err| {
+        setLastError(err);
+        return null;
+    };
+
+    const response_ptr = allocator.create(ClientRegistrationResponse) catch |err| {
+        setLastError(err);
+        response.deinit();
+        return null;
+    };
+    response_ptr.* = response;
+
+    const response_handle = allocator.create(SchlusselRegistrationResponse) catch |err| {
+        setLastError(err);
+        response.deinit();
+        allocator.destroy(response_ptr);
+        return null;
+    };
+    response_handle.* = .{ .response = response_ptr };
+
+    return response_handle;
+}
+
+/// Update client configuration at the authorization server
+///
+/// Returns: Registration response handle on success, NULL on error
+export fn schlussel_registration_update(
+    reg_client: ?*SchlusselRegistrationClient,
+    registration_access_token: [*c]const u8,
+    redirect_uris: [*c]const [*c]const u8,
+    redirect_uris_count: usize,
+    client_name: [*c]const u8,
+    grant_types: [*c]const u8,
+    response_types: [*c]const u8,
+    scope: [*c]const u8,
+    token_auth_method: [*c]const u8,
+) ?*SchlusselRegistrationResponse {
+    clearLastError();
+    const handle = reg_client orelse {
+        setLastError(error.InvalidParameter);
+        return null;
+    };
+    if (registration_access_token == null) {
+        setLastError(error.InvalidParameter);
+        return null;
+    }
+    if (redirect_uris == null and redirect_uris_count > 0) {
+        setLastError(error.InvalidParameter);
+        return null;
+    }
+    const allocator = getAllocator();
+
+    var metadata = RegistrationMetadata.init(
+        allocator,
+        redirect_uris,
+        redirect_uris_count,
+        client_name,
+        grant_types,
+        response_types,
+        scope,
+        token_auth_method,
+    ) catch |err| {
+        setLastError(err);
+        return null;
+    };
+    defer metadata.deinit(allocator);
+
+    var response = handle.client.update(std.mem.span(registration_access_token), metadata.metadata) catch |err| {
+        setLastError(err);
+        return null;
+    };
+
+    const response_ptr = allocator.create(ClientRegistrationResponse) catch |err| {
+        setLastError(err);
+        response.deinit();
+        return null;
+    };
+    response_ptr.* = response;
+
+    const response_handle = allocator.create(SchlusselRegistrationResponse) catch |err| {
+        setLastError(err);
+        response.deinit();
+        allocator.destroy(response_ptr);
+        return null;
+    };
+    response_handle.* = .{ .response = response_ptr };
+
+    return response_handle;
+}
+
+/// Delete client registration
+///
+/// Returns: 0 on success, -1 on error
+export fn schlussel_registration_delete(
+    reg_client: ?*SchlusselRegistrationClient,
+    registration_access_token: [*c]const u8,
+) c_int {
+    clearLastError();
+    const handle = reg_client orelse {
+        setLastError(error.InvalidParameter);
+        return errorCodeFromAny(error.InvalidParameter);
+    };
+    if (registration_access_token == null) {
+        setLastError(error.InvalidParameter);
+        return errorCodeFromAny(error.InvalidParameter);
+    }
+    handle.client.delete(std.mem.span(registration_access_token)) catch |err| {
+        setLastError(err);
+        return errorCodeFromAny(err);
+    };
+    return 0;
 }
 
 /// Free a registration response
@@ -688,4 +1064,27 @@ test "FFI token free with null" {
 test "FFI client free with null" {
     // Should not crash with null
     schlussel_client_free(null);
+}
+
+test "FFI last error reports invalid parameters" {
+    schlussel_clear_last_error();
+
+    const client = schlussel_registration_new(null);
+    try std.testing.expect(client == null);
+    try std.testing.expectEqual(
+        @as(c_int, error_types.toErrorCode(error.InvalidParameter)),
+        schlussel_last_error_code(),
+    );
+
+    const msg = schlussel_last_error_message();
+    try std.testing.expect(msg != null);
+    if (msg) |m| {
+        schlussel_string_free(m);
+    }
+}
+
+test "FFI last error clears" {
+    schlussel_clear_last_error();
+    try std.testing.expectEqual(@as(c_int, 0), schlussel_last_error_code());
+    try std.testing.expect(schlussel_last_error_message() == null);
 }

@@ -60,6 +60,16 @@ typedef enum {
     SCHLUSSEL_ERROR_DEVICE_CODE_EXPIRED = 8,
     SCHLUSSEL_ERROR_JSON = 9,
     SCHLUSSEL_ERROR_IO = 10,
+    SCHLUSSEL_ERROR_SERVER = 11,
+    SCHLUSSEL_ERROR_CALLBACK_SERVER = 12,
+    SCHLUSSEL_ERROR_CONFIGURATION = 13,
+    SCHLUSSEL_ERROR_LOCK = 14,
+    SCHLUSSEL_ERROR_UNSUPPORTED = 15,
+    SCHLUSSEL_ERROR_OUT_OF_MEMORY = 16,
+    SCHLUSSEL_ERROR_CONNECTION_FAILED = 17,
+    SCHLUSSEL_ERROR_TIMEOUT = 18,
+    SCHLUSSEL_ERROR_AUTHORIZATION_PENDING = 19,
+    SCHLUSSEL_ERROR_SLOW_DOWN = 20,
     SCHLUSSEL_ERROR_UNKNOWN = 99,
 } SchlusselError;
 
@@ -309,6 +319,26 @@ void schlussel_token_free(SchlusselToken* token);
  */
 void schlussel_string_free(char* str);
 
+/**
+ * Get the last error code for the calling thread
+ *
+ * @return          Error code for the most recent failure (0 if none)
+ */
+int schlussel_last_error_code(void);
+
+/**
+ * Get the last error message for the calling thread
+ *
+ * @return          Newly allocated string, or NULL if no error
+ *                  Must be freed with schlussel_string_free()
+ */
+char* schlussel_last_error_message(void);
+
+/**
+ * Clear the last error for the calling thread
+ */
+void schlussel_clear_last_error(void);
+
 /* ============================================================================
  * Dynamic Client Registration functions
  * ============================================================================ */
@@ -352,6 +382,56 @@ SchlusselRegistrationResponse* schlussel_register_client(
     const char* response_types,
     const char* scope,
     const char* token_auth_method
+);
+
+/**
+ * Read client configuration from the registration endpoint
+ *
+ * @param reg_client                  The registration client
+ * @param registration_access_token   Registration access token
+ * @return                            Registration response on success, NULL on error
+ */
+SchlusselRegistrationResponse* schlussel_registration_read(
+    SchlusselRegistrationClient* reg_client,
+    const char* registration_access_token
+);
+
+/**
+ * Update client configuration at the authorization server
+ *
+ * @param reg_client                  The registration client
+ * @param registration_access_token   Registration access token
+ * @param redirect_uris               Array of redirect URI strings
+ * @param redirect_uris_count         Number of redirect URIs
+ * @param client_name                 Human-readable client name (may be NULL)
+ * @param grant_types                 Comma-separated grant types (may be NULL)
+ * @param response_types              Comma-separated response types (may be NULL)
+ * @param scope                       OAuth scope (may be NULL)
+ * @param token_auth_method           Token endpoint auth method (may be NULL)
+ * @return                            Registration response on success, NULL on error
+ */
+SchlusselRegistrationResponse* schlussel_registration_update(
+    SchlusselRegistrationClient* reg_client,
+    const char* registration_access_token,
+    const char** redirect_uris,
+    size_t redirect_uris_count,
+    const char* client_name,
+    const char* grant_types,
+    const char* response_types,
+    const char* scope,
+    const char* token_auth_method
+);
+
+/**
+ * Delete client registration
+ *
+ * @param reg_client                  The registration client
+ * @param registration_access_token   Registration access token
+ * @return                            SCHLUSSEL_OK on success, error code on failure
+ */
+int schlussel_registration_delete(
+    SchlusselRegistrationClient* reg_client,
+    const char* registration_access_token
 );
 
 /**

@@ -123,6 +123,10 @@ schlussel.OAuthConfig.gitlab("id", null, null)       // GitLab
 schlussel.OAuthConfig.tuist("id", null, null)        // Tuist
 ```
 
+### Dynamic Client Registration
+Register clients dynamically with OAuth servers that support RFC 7591. For read/update/delete,
+initialize `DynamicRegistration` with the `registration_client_uri` returned by the server.
+
 ### Automatic Token Refresh
 ```zig
 var refresher = schlussel.TokenRefresher.init(allocator, &client);
