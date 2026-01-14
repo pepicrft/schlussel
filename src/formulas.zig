@@ -6,23 +6,38 @@ pub const Error = error{
     InvalidRootDocument,
     MissingField,
     InvalidField,
-    InvalidFlow,
+    InvalidMethod,
 };
 
-pub const Flow = enum {
+pub const Method = enum {
     authorization_code,
     device_code,
+
+    pub fn jsonStringify(self: Method, writer: anytype) !void {
+        try writer.write(@tagName(self));
+    }
 };
 
-pub fn flowFromString(value: []const u8) ?Flow {
+pub fn methodFromString(value: []const u8) ?Method {
     if (std.mem.eql(u8, value, "authorization_code")) return .authorization_code;
     if (std.mem.eql(u8, value, "device_code")) return .device_code;
     return null;
 }
 
-pub const Onboarding = struct {
-    register_url: []const u8,
+pub const InteractionRegister = struct {
+    url: []const u8,
     steps: []const []const u8,
+};
+
+pub const InteractionStep = struct {
+    @"type": []const u8,
+    value: ?[]const u8,
+    note: ?[]const u8,
+};
+
+pub const Interaction = struct {
+    register: ?InteractionRegister,
+    auth_steps: ?[]const InteractionStep,
 };
 
 pub const PublicClient = struct {
@@ -30,7 +45,7 @@ pub const PublicClient = struct {
     id: []const u8,
     secret: ?[]const u8,
     source: ?[]const u8,
-    flows: ?[]const Flow,
+    methods: ?[]const Method,
 };
 
 pub const Quirks = struct {
@@ -48,13 +63,13 @@ pub const Quirks = struct {
 pub const Formula = struct {
     id: []const u8,
     label: []const u8,
-    flows: []const Flow,
+    methods: []const Method,
     authorization_endpoint: []const u8,
     token_endpoint: []const u8,
     device_authorization_endpoint: ?[]const u8,
     scope: ?[]const u8,
     public_clients: ?[]const PublicClient,
-    onboarding: ?Onboarding,
+    interaction: ?Interaction,
     quirks: ?Quirks,
 
     /// Get the default public client (first one in the list)
@@ -118,19 +133,21 @@ pub fn deinitBuiltinFormulas() void {
 pub const FormulaOwned = struct {
     allocator: Allocator,
     formula: Formula,
-    flows_alloc: ?[]const Flow,
-    steps_alloc: ?[]const []const u8,
+    methods_alloc: ?[]const Method,
+    register_steps_alloc: ?[]const []const u8,
+    interaction_steps_alloc: ?[]const InteractionStep,
     extra_fields_alloc: ?[]const []const u8,
     public_clients_alloc: ?[]const PublicClient,
     parsed: json.Parsed(json.Value),
 
     pub fn deinit(self: *FormulaOwned) void {
-        if (self.flows_alloc) |arr| self.allocator.free(arr);
-        if (self.steps_alloc) |arr| self.allocator.free(arr);
+        if (self.methods_alloc) |arr| self.allocator.free(arr);
+        if (self.register_steps_alloc) |arr| self.allocator.free(arr);
+        if (self.interaction_steps_alloc) |arr| self.allocator.free(arr);
         if (self.extra_fields_alloc) |arr| self.allocator.free(arr);
         if (self.public_clients_alloc) |arr| {
             for (arr) |client| {
-                if (client.flows) |flows| self.allocator.free(flows);
+                if (client.methods) |methods| self.allocator.free(methods);
             }
             self.allocator.free(arr);
         }
@@ -180,17 +197,17 @@ fn optionalStringArray(allocator: Allocator, value: ?json.Value) !?[]const []con
     return null;
 }
 
-fn parseFlows(allocator: Allocator, value: json.Value) ![]const Flow {
+fn parseMethods(allocator: Allocator, value: json.Value) ![]const Method {
     const arr = switch (value) {
         .array => |a| a,
         else => return Error.InvalidField,
     };
 
-    var slice = try allocator.alloc(Flow, arr.items.len);
+    var slice = try allocator.alloc(Method, arr.items.len);
     errdefer allocator.free(slice);
     for (arr.items, 0..) |item, idx| {
         const text = try expectString(item);
-        slice[idx] = flowFromString(text) orelse return Error.InvalidFlow;
+        slice[idx] = methodFromString(text) orelse return Error.InvalidMethod;
     }
     return slice;
 }
@@ -206,7 +223,7 @@ fn parsePublicClients(allocator: Allocator, value: json.Value) ![]const PublicCl
     var parsed_count: usize = 0;
     errdefer {
         for (slice[0..parsed_count]) |client| {
-            if (client.flows) |flows| allocator.free(flows);
+            if (client.methods) |methods| allocator.free(methods);
         }
     }
     for (arr.items, 0..) |item, idx| {
@@ -215,24 +232,49 @@ fn parsePublicClients(allocator: Allocator, value: json.Value) ![]const PublicCl
             else => return Error.InvalidField,
         };
 
-        var flows: ?[]const Flow = null;
-        if (obj.get("flows")) |flows_value| {
-            if (flows_value != .null) {
-                flows = try parseFlows(allocator, flows_value);
+        var methods: ?[]const Method = null;
+        if (obj.get("methods")) |methods_value| {
+            if (methods_value != .null) {
+                methods = try parseMethods(allocator, methods_value);
             }
         }
-        errdefer if (flows) |arr| allocator.free(arr);
+        errdefer if (methods) |methods_slice| allocator.free(methods_slice);
 
         slice[idx] = PublicClient{
             .name = try expectString(obj.get("name") orelse return Error.MissingField),
             .id = try expectString(obj.get("id") orelse return Error.MissingField),
             .secret = try optionalString(obj.get("secret")),
             .source = try optionalString(obj.get("source")),
-            .flows = flows,
+            .methods = methods,
         };
-        flows = null;
+        methods = null;
         parsed_count += 1;
     }
+    return slice;
+}
+
+fn parseInteractionSteps(allocator: Allocator, value: json.Value) ![]const InteractionStep {
+    const arr = switch (value) {
+        .array => |a| a,
+        else => return Error.InvalidField,
+    };
+
+    var slice = try allocator.alloc(InteractionStep, arr.items.len);
+    errdefer allocator.free(slice);
+
+    for (arr.items, 0..) |item, idx| {
+        const obj = switch (item) {
+            .object => |o| o,
+            else => return Error.InvalidField,
+        };
+
+        slice[idx] = InteractionStep{
+            .@"type" = try expectString(obj.get("type") orelse return Error.MissingField),
+            .value = try optionalString(obj.get("value")),
+            .note = try optionalString(obj.get("note")),
+        };
+    }
+
     return slice;
 }
 
@@ -258,27 +300,44 @@ pub fn loadFromJsonSlice(allocator: Allocator, slice: []const u8) !FormulaOwned 
     const token_endpoint = try expectString(endpoint_obj.get("token") orelse return Error.MissingField);
     const device_authorization_endpoint = try optionalString(endpoint_obj.get("device"));
 
-    const flows_value = root.get("flows") orelse return Error.MissingField;
-    const flows = try parseFlows(allocator, flows_value);
-    errdefer allocator.free(flows);
+    const methods_value = root.get("methods") orelse return Error.MissingField;
+    const methods = try parseMethods(allocator, methods_value);
+    errdefer allocator.free(methods);
 
-    var onboarding: ?Onboarding = null;
-    var steps: ?[]const []const u8 = null;
-    if (root.get("onboarding")) |onboarding_value| {
-        const onboarding_obj = switch (onboarding_value) {
+    var interaction: ?Interaction = null;
+    var register_steps: ?[]const []const u8 = null;
+    var interaction_steps: ?[]const InteractionStep = null;
+    if (root.get("interaction")) |interaction_value| {
+        const interaction_obj = switch (interaction_value) {
             .object => |o| o,
             else => return Error.InvalidField,
         };
 
-        const register_url = try expectString(onboarding_obj.get("register_url") orelse return Error.MissingField);
-        steps = try parseStringArray(allocator, onboarding_obj.get("steps") orelse return Error.MissingField);
+        var register: ?InteractionRegister = null;
+        if (interaction_obj.get("register")) |register_value| {
+            const register_obj = switch (register_value) {
+                .object => |o| o,
+                else => return Error.InvalidField,
+            };
+            const register_url = try expectString(register_obj.get("url") orelse return Error.MissingField);
+            register_steps = try parseStringArray(allocator, register_obj.get("steps") orelse return Error.MissingField);
+            register = InteractionRegister{
+                .url = register_url,
+                .steps = register_steps.?,
+            };
+        }
 
-        onboarding = Onboarding{
-            .register_url = register_url,
-            .steps = steps.?,
+        if (interaction_obj.get("auth_steps")) |steps_value| {
+            interaction_steps = try parseInteractionSteps(allocator, steps_value);
+        }
+
+        interaction = Interaction{
+            .register = register,
+            .auth_steps = interaction_steps,
         };
     }
-    errdefer if (steps) |s| allocator.free(s);
+    errdefer if (register_steps) |s| allocator.free(s);
+    errdefer if (interaction_steps) |s| allocator.free(s);
 
     const scope = try optionalString(root.get("scope"));
 
@@ -317,17 +376,18 @@ pub fn loadFromJsonSlice(allocator: Allocator, slice: []const u8) !FormulaOwned 
         .formula = Formula{
             .id = id,
             .label = label,
-            .flows = flows,
+            .methods = methods,
             .authorization_endpoint = authorization_endpoint,
             .token_endpoint = token_endpoint,
             .device_authorization_endpoint = device_authorization_endpoint,
             .scope = scope,
             .public_clients = public_clients,
-            .onboarding = onboarding,
+            .interaction = interaction,
             .quirks = quirks,
         },
-        .flows_alloc = flows,
-        .steps_alloc = steps,
+        .methods_alloc = methods,
+        .register_steps_alloc = register_steps,
+        .interaction_steps_alloc = interaction_steps,
         .extra_fields_alloc = if (quirks) |q| q.extra_response_fields else null,
         .public_clients_alloc = public_clients,
         .parsed = parsed,
@@ -355,7 +415,7 @@ test "FormulaOwned: parse minimal formula without leaks" {
         \\{
         \\  "id": "test",
         \\  "label": "Test Provider",
-        \\  "flows": ["device_code"],
+        \\  "methods": ["device_code"],
         \\  "endpoints": {
         \\    "authorize": "https://example.com/authorize",
         \\    "token": "https://example.com/token"
@@ -368,8 +428,8 @@ test "FormulaOwned: parse minimal formula without leaks" {
 
     try std.testing.expectEqualStrings("test", owned.formula.id);
     try std.testing.expectEqualStrings("Test Provider", owned.formula.label);
-    try std.testing.expectEqual(@as(usize, 1), owned.formula.flows.len);
-    try std.testing.expectEqual(Flow.device_code, owned.formula.flows[0]);
+    try std.testing.expectEqual(@as(usize, 1), owned.formula.methods.len);
+    try std.testing.expectEqual(Method.device_code, owned.formula.methods[0]);
 }
 
 test "FormulaOwned: parse formula with public_clients without leaks" {
@@ -379,7 +439,7 @@ test "FormulaOwned: parse formula with public_clients without leaks" {
         \\{
         \\  "id": "github",
         \\  "label": "GitHub",
-        \\  "flows": ["device_code", "authorization_code"],
+        \\  "methods": ["device_code", "authorization_code"],
         \\  "endpoints": {
         \\    "authorize": "https://github.com/login/oauth/authorize",
         \\    "token": "https://github.com/login/oauth/access_token",
@@ -392,12 +452,12 @@ test "FormulaOwned: parse formula with public_clients without leaks" {
         \\      "id": "abc123",
         \\      "secret": "secret456",
         \\      "source": "https://github.com/cli/cli",
-        \\      "flows": ["device_code"]
+        \\      "methods": ["device_code"]
         \\    },
         \\    {
         \\      "name": "another-cli",
         \\      "id": "def789",
-        \\      "flows": ["authorization_code"]
+        \\      "methods": ["authorization_code"]
         \\    }
         \\  ]
         \\}
@@ -407,7 +467,7 @@ test "FormulaOwned: parse formula with public_clients without leaks" {
     defer owned.deinit();
 
     try std.testing.expectEqualStrings("github", owned.formula.id);
-    try std.testing.expectEqual(@as(usize, 2), owned.formula.flows.len);
+    try std.testing.expectEqual(@as(usize, 2), owned.formula.methods.len);
     try std.testing.expect(owned.formula.public_clients != null);
     try std.testing.expectEqual(@as(usize, 2), owned.formula.public_clients.?.len);
 
@@ -417,53 +477,62 @@ test "FormulaOwned: parse formula with public_clients without leaks" {
     try std.testing.expectEqualStrings("gh-cli", default_client.?.name);
     try std.testing.expectEqualStrings("abc123", default_client.?.id);
     try std.testing.expectEqualStrings("secret456", default_client.?.secret.?);
-    try std.testing.expect(default_client.?.flows != null);
-    try std.testing.expectEqual(@as(usize, 1), default_client.?.flows.?.len);
-    try std.testing.expectEqual(Flow.device_code, default_client.?.flows.?[0]);
+    try std.testing.expect(default_client.?.methods != null);
+    try std.testing.expectEqual(@as(usize, 1), default_client.?.methods.?.len);
+    try std.testing.expectEqual(Method.device_code, default_client.?.methods.?[0]);
 
     // Test getClientByName
     const found = owned.formula.getClientByName("another-cli");
     try std.testing.expect(found != null);
     try std.testing.expectEqualStrings("def789", found.?.id);
     try std.testing.expect(found.?.secret == null);
-    try std.testing.expect(found.?.flows != null);
-    try std.testing.expectEqual(@as(usize, 1), found.?.flows.?.len);
-    try std.testing.expectEqual(Flow.authorization_code, found.?.flows.?[0]);
+    try std.testing.expect(found.?.methods != null);
+    try std.testing.expectEqual(@as(usize, 1), found.?.methods.?.len);
+    try std.testing.expectEqual(Method.authorization_code, found.?.methods.?[0]);
 
     // Test not found
     const not_found = owned.formula.getClientByName("nonexistent");
     try std.testing.expect(not_found == null);
 }
 
-test "FormulaOwned: parse formula with onboarding without leaks" {
+test "FormulaOwned: parse formula with interaction register without leaks" {
     const allocator = std.testing.allocator;
 
-    const json_with_onboarding =
+    const json_with_interaction =
         \\{
         \\  "id": "custom",
         \\  "label": "Custom Provider",
-        \\  "flows": ["authorization_code"],
+        \\  "methods": ["authorization_code"],
         \\  "endpoints": {
         \\    "authorize": "https://custom.com/authorize",
         \\    "token": "https://custom.com/token"
         \\  },
-        \\  "onboarding": {
-        \\    "register_url": "https://custom.com/register",
-        \\    "steps": [
-        \\      "Go to the registration page",
-        \\      "Create a new OAuth application",
-        \\      "Copy the client ID"
+        \\  "interaction": {
+        \\    "register": {
+        \\      "url": "https://custom.com/register",
+        \\      "steps": [
+        \\        "Go to the registration page",
+        \\        "Create a new OAuth application",
+        \\        "Copy the client ID"
+        \\      ]
+        \\    },
+        \\    "auth_steps": [
+        \\      { "type": "open_url", "value": "{authorize_url}" },
+        \\      { "type": "wait_for_callback" }
         \\    ]
         \\  }
         \\}
     ;
 
-    var owned = try loadFromJsonSlice(allocator, json_with_onboarding);
+    var owned = try loadFromJsonSlice(allocator, json_with_interaction);
     defer owned.deinit();
 
-    try std.testing.expect(owned.formula.onboarding != null);
-    try std.testing.expectEqualStrings("https://custom.com/register", owned.formula.onboarding.?.register_url);
-    try std.testing.expectEqual(@as(usize, 3), owned.formula.onboarding.?.steps.len);
+    try std.testing.expect(owned.formula.interaction != null);
+    try std.testing.expect(owned.formula.interaction.?.register != null);
+    try std.testing.expectEqualStrings("https://custom.com/register", owned.formula.interaction.?.register.?.url);
+    try std.testing.expectEqual(@as(usize, 3), owned.formula.interaction.?.register.?.steps.len);
+    try std.testing.expect(owned.formula.interaction.?.auth_steps != null);
+    try std.testing.expectEqual(@as(usize, 2), owned.formula.interaction.?.auth_steps.?.len);
 }
 
 test "FormulaOwned: parse formula with quirks without leaks" {
@@ -473,7 +542,7 @@ test "FormulaOwned: parse formula with quirks without leaks" {
         \\{
         \\  "id": "quirky",
         \\  "label": "Quirky Provider",
-        \\  "flows": ["device_code"],
+        \\  "methods": ["device_code"],
         \\  "endpoints": {
         \\    "authorize": "https://quirky.com/authorize",
         \\    "token": "https://quirky.com/token"
@@ -506,7 +575,7 @@ test "FormulaOwned: parse full formula with all fields without leaks" {
         \\{
         \\  "id": "full",
         \\  "label": "Full Provider",
-        \\  "flows": ["device_code", "authorization_code"],
+        \\  "methods": ["device_code", "authorization_code"],
         \\  "endpoints": {
         \\    "authorize": "https://full.com/authorize",
         \\    "token": "https://full.com/token",
@@ -516,9 +585,15 @@ test "FormulaOwned: parse full formula with all fields without leaks" {
         \\  "public_clients": [
         \\    {"name": "cli", "id": "id1", "secret": "secret1", "source": "https://source.com"}
         \\  ],
-        \\  "onboarding": {
-        \\    "register_url": "https://full.com/register",
-        \\    "steps": ["Step 1", "Step 2"]
+        \\  "interaction": {
+        \\    "register": {
+        \\      "url": "https://full.com/register",
+        \\      "steps": ["Step 1", "Step 2"]
+        \\    },
+        \\    "auth_steps": [
+        \\      { "type": "open_url", "value": "{authorize_url}" },
+        \\      { "type": "wait_for_callback" }
+        \\    ]
         \\  },
         \\  "quirks": {
         \\    "dynamic_registration_endpoint": "https://full.com/dyn",
@@ -533,7 +608,7 @@ test "FormulaOwned: parse full formula with all fields without leaks" {
     try std.testing.expectEqualStrings("full", owned.formula.id);
     try std.testing.expectEqualStrings("read write admin", owned.formula.scope.?);
     try std.testing.expect(owned.formula.public_clients != null);
-    try std.testing.expect(owned.formula.onboarding != null);
+    try std.testing.expect(owned.formula.interaction != null);
     try std.testing.expect(owned.formula.quirks != null);
     try std.testing.expectEqualStrings("https://full.com/device", owned.formula.device_authorization_endpoint.?);
 }
@@ -549,24 +624,24 @@ test "FormulaOwned: error handling does not leak on invalid JSON" {
     const missing_id =
         \\{
         \\  "label": "Test",
-        \\  "flows": ["device_code"],
+        \\  "methods": ["device_code"],
         \\  "endpoints": {"authorize": "https://x.com/a", "token": "https://x.com/t"}
         \\}
     ;
     const result2 = loadFromJsonSlice(allocator, missing_id);
     try std.testing.expectError(Error.MissingField, result2);
 
-    // Invalid flow type
+    // Invalid method type
     const invalid_flow =
         \\{
         \\  "id": "test",
         \\  "label": "Test",
-        \\  "flows": ["invalid_flow"],
+        \\  "methods": ["invalid_method"],
         \\  "endpoints": {"authorize": "https://x.com/a", "token": "https://x.com/t"}
         \\}
     ;
     const result3 = loadFromJsonSlice(allocator, invalid_flow);
-    try std.testing.expectError(Error.InvalidFlow, result3);
+    try std.testing.expectError(Error.InvalidMethod, result3);
 
     // Not an object
     const result4 = loadFromJsonSlice(allocator, "[]");
@@ -631,9 +706,9 @@ test "builtin formulas: codex and claude formulas load correctly" {
     deinitBuiltinFormulas();
 }
 
-test "flowFromString: returns correct flows" {
-    try std.testing.expectEqual(Flow.authorization_code, flowFromString("authorization_code").?);
-    try std.testing.expectEqual(Flow.device_code, flowFromString("device_code").?);
-    try std.testing.expect(flowFromString("invalid") == null);
-    try std.testing.expect(flowFromString("") == null);
+test "methodFromString: returns correct methods" {
+    try std.testing.expectEqual(Method.authorization_code, methodFromString("authorization_code").?);
+    try std.testing.expectEqual(Method.device_code, methodFromString("device_code").?);
+    try std.testing.expect(methodFromString("invalid") == null);
+    try std.testing.expect(methodFromString("") == null);
 }

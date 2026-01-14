@@ -1,6 +1,6 @@
 # Schlussel
 
-**Secure OAuth 2.0 for CLI applications** - Written in Zig, works everywhere
+**Auth runtime for agents and CLI applications** - Written in Zig, works everywhere
 
 OAuth authentication made simple for command-line tools. No more copying tokens or managing credentials manually!
 
@@ -8,10 +8,15 @@ OAuth authentication made simple for command-line tools. No more copying tokens 
 
 ## Features
 
-**Multiple OAuth Flows**
+**Multiple OAuth Methods**
 - Device Code Flow (perfect for CLI!)
 - Authorization Code Flow with PKCE
 - Automatic browser handling
+
+**Interaction Plans**
+- Structured steps agents can render
+- Resolved plan context for device codes and callbacks
+- Execute plans via CLI or FFI
 
 **Secure by Default**
 - OS credential manager integration (Keychain/Credential Manager)
@@ -73,6 +78,16 @@ pub fn main() !void {
 
     std.debug.print("Access token: {s}\n", .{token.access_token});
 }
+```
+
+### Generate and Run a Plan
+
+```bash
+# Create a resolved plan for device code
+schlussel plan github --method device_code --resolve > plan.json
+
+# Execute the plan and store the token
+schlussel run github --plan-json plan.json
 ```
 
 ---
@@ -148,6 +163,11 @@ Check out [examples/](examples/) for working code:
 
 - [GitHub Device Flow](examples/github_device_flow.zig)
 - [Automatic Refresh](examples/automatic_refresh.zig)
+
+## Documentation
+
+- [Formula schema](docs/formula.md)
+- [Interaction plans](docs/plan.md)
 
 ---
 

@@ -68,9 +68,9 @@
         <p>Scalable locking scopes keep throughput high while sticking to a single source of truth.</p>
       </article>
       <article>
-        <h3>Agent-ready interactions</h3>
-        <p>Formulas describe the exact steps a user must take, whether that is a device flow, browser callback, or API key setup.</p>
-        <p>Agents can surface consistent instructions instead of bespoke readmes.</p>
+        <h3>Interaction plans</h3>
+        <p>Formulas resolve into structured plans: open a URL, enter a code, wait for a callback.</p>
+        <p>Agents can render the exact steps and execute them consistently.</p>
       </article>
       <article>
         <h3>Native storage</h3>
@@ -88,8 +88,8 @@
     <div class="gs__grid">
       <article>
         <h3>Install CLI</h3>
-        <p>Bring the CLI to your agent fleet for OAuth2, device flows, and guided onboarding.</p>
-        <p class="gs__note">Clone, build with Zig, run <code>schlussel login &lt;provider&gt;</code>, and tokens land in the OS credential manager with locking to avoid dueling refreshes.</p>
+        <p>Bring the CLI to your agent fleet for OAuth2 methods and guided onboarding.</p>
+        <p class="gs__note">Clone, build with Zig, run <code>schlussel plan</code> and <code>schlussel run</code>, and tokens land in the OS credential manager with locking to avoid dueling refreshes.</p>
       </article>
       <article>
         <h3>Use the Zig library</h3>
@@ -154,12 +154,12 @@
       <div class="formula-card">
         <h3>First-party</h3>
         <p>Compiled formulas for GitHub, Google, Microsoft, GitLab, Tuist, and now Claude &amp; Codex.</p>
-        <p>Versioned with the library, no configuration required for the supported workflows.</p>
+        <p>Versioned with the library, no configuration required for the supported methods.</p>
       </div>
       <div class="formula-card">
         <h3>Third-party</h3>
         <p>Drop JSON on disk or pipe a custom file when your IdP behaves differently.</p>
-        <p>Formulas describe flows, endpoints, scopes, registration steps, and user guidance.</p>
+        <p>Formulas describe methods, endpoints, scopes, registration steps, and user guidance.</p>
       </div>
       <div class="formula-card">
         <h3>Onboarding</h3>
@@ -171,7 +171,7 @@
       <pre><code class="language-json">{
   "id": "claude",
   "label": "Claude Code (Anthropic)",
-  "flows": ["authorization_code"],
+  "methods": ["authorization_code"],
   "endpoints": {
     "authorize": "https://console.anthropic.com/oauth/authorize",
     "token": "https://console.anthropic.com/v1/oauth/token"
@@ -182,14 +182,20 @@
       "name": "claude-code",
       "id": "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
       "source": "https://github.com/anthropics/claude-code",
-      "flows": ["authorization_code"]
+      "methods": ["authorization_code"]
     }
   ],
-  "onboarding": {
-    "register_url": "https://console.anthropic.com",
-    "steps": [
-      "Sign up for an Anthropic account at https://console.anthropic.com",
-      "A Claude Pro, Max, Team, or Enterprise subscription is required for Claude Code access"
+  "interaction": {
+    "register": {
+      "url": "https://console.anthropic.com",
+      "steps": [
+        "Sign up for an Anthropic account at https://console.anthropic.com",
+        "A Claude Pro, Max, Team, or Enterprise subscription is required for Claude Code access"
+      ]
+    },
+    "auth_steps": [
+      { "type": "open_url", "value": "{authorize_url}" },
+      { "type": "wait_for_callback" }
     ]
   }
 }</code></pre>

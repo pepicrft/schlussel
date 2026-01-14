@@ -1,7 +1,7 @@
 {
   "id": "codex",
   "label": "OpenAI Codex",
-  "flows": ["authorization_code"],
+  "methods": ["authorization_code"],
   "endpoints": {
     "authorize": "https://auth.openai.com/oauth/authorize",
     "token": "https://auth.openai.com/oauth/token"
@@ -12,14 +12,20 @@
       "name": "codex-cli",
       "id": "app_EMoamEEZ73f0CkXaXp7hrann",
       "source": "https://github.com/openai/codex",
-      "flows": ["authorization_code"]
+      "methods": ["authorization_code"]
     }
   ],
-  "onboarding": {
-    "register_url": "https://chatgpt.com",
-    "steps": [
-      "Sign up for a ChatGPT account at https://chatgpt.com if you don't have one",
-      "A ChatGPT Plus, Pro, or Team subscription is required for Codex CLI access"
+  "interaction": {
+    "register": {
+      "url": "https://chatgpt.com",
+      "steps": [
+        "Sign up for a ChatGPT account at https://chatgpt.com if you don't have one",
+        "A ChatGPT Plus, Pro, or Team subscription is required for Codex CLI access"
+      ]
+    },
+    "auth_steps": [
+      { "type": "open_url", "value": "{authorize_url}" },
+      { "type": "wait_for_callback" }
     ]
   }
 }

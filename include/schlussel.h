@@ -340,6 +340,49 @@ char* schlussel_last_error_message(void);
 void schlussel_clear_last_error(void);
 
 /* ============================================================================
+ * Formula plan functions
+ * ============================================================================ */
+
+/**
+ * Emit a JSON interaction plan from a formula JSON document.
+ *
+ * @param formula_json  Formula JSON (null-terminated)
+ * @return              Newly allocated string on success, NULL on error
+ *                      Must be freed with schlussel_string_free()
+ */
+char* schlussel_plan_from_formula_json(const char* formula_json);
+
+/**
+ * Emit a resolved JSON interaction plan from a formula JSON document.
+ *
+ * @param formula_json  Formula JSON (null-terminated)
+ * @param method        Authentication method (e.g. "authorization_code")
+ * @param client_id     OAuth client ID override (may be NULL)
+ * @param client_secret OAuth client secret override (may be NULL)
+ * @param scope         OAuth scopes (may be NULL)
+ * @param redirect_uri  Redirect URI (may be NULL, defaults to auto-assigned)
+ * @return              Newly allocated string on success, NULL on error
+ *                      Must be freed with schlussel_string_free()
+ */
+char* schlussel_plan_resolve_from_formula_json(
+    const char* formula_json,
+    const char* method,
+    const char* client_id,
+    const char* client_secret,
+    const char* scope,
+    const char* redirect_uri
+);
+
+/**
+ * Execute a resolved interaction plan using an existing client.
+ *
+ * @param client        OAuth client handle
+ * @param plan_json     Resolved plan JSON (null-terminated)
+ * @return              Token handle on success, NULL on error
+ */
+SchlusselToken* schlussel_run_plan(SchlusselClient* client, const char* plan_json);
+
+/* ============================================================================
  * Dynamic Client Registration functions
  * ============================================================================ */
 

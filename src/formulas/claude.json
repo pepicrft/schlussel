@@ -1,7 +1,7 @@
 {
   "id": "claude",
   "label": "Claude Code (Anthropic)",
-  "flows": ["authorization_code"],
+  "methods": ["authorization_code"],
   "endpoints": {
     "authorize": "https://console.anthropic.com/oauth/authorize",
     "token": "https://console.anthropic.com/v1/oauth/token"
@@ -12,14 +12,20 @@
       "name": "claude-code",
       "id": "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
       "source": "https://github.com/anthropics/claude-code",
-      "flows": ["authorization_code"]
+      "methods": ["authorization_code"]
     }
   ],
-  "onboarding": {
-    "register_url": "https://console.anthropic.com",
-    "steps": [
-      "Sign up for an Anthropic account at https://console.anthropic.com",
-      "A Claude Pro, Max, Team, or Enterprise subscription is required for Claude Code access"
+  "interaction": {
+    "register": {
+      "url": "https://console.anthropic.com",
+      "steps": [
+        "Sign up for an Anthropic account at https://console.anthropic.com",
+        "A Claude Pro, Max, Team, or Enterprise subscription is required for Claude Code access"
+      ]
+    },
+    "auth_steps": [
+      { "type": "open_url", "value": "{authorize_url}" },
+      { "type": "wait_for_callback" }
     ]
   }
 }

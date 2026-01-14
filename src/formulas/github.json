@@ -1,7 +1,7 @@
 {
   "id": "github",
   "label": "GitHub",
-  "flows": ["device_code", "authorization_code"],
+  "methods": ["device_code", "authorization_code"],
   "endpoints": {
     "authorize": "https://github.com/login/oauth/authorize",
     "token": "https://github.com/login/oauth/access_token",
@@ -15,5 +15,12 @@
       "secret": "34ddeff2b558a23d38fba8a6de74f086ede1cc0b",
       "source": "https://github.com/cli/cli"
     }
-  ]
+  ],
+  "interaction": {
+    "auth_steps": [
+      { "type": "open_url", "value": "{verification_uri}" },
+      { "type": "enter_code", "value": "{user_code}" },
+      { "type": "wait_for_token" }
+    ]
+  }
 }

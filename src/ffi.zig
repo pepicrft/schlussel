@@ -22,6 +22,9 @@ const session = @import("session.zig");
 const oauth = @import("oauth.zig");
 const error_types = @import("error.zig");
 const registration = @import("registration.zig");
+const formulas = @import("formulas.zig");
+const callback = @import("callback.zig");
+const pkce = @import("pkce.zig");
 
 const Token = session.Token;
 const MemoryStorage = session.MemoryStorage;
@@ -32,6 +35,48 @@ const OAuthClient = oauth.OAuthClient;
 const ClientMetadata = registration.ClientMetadata;
 const ClientRegistrationResponse = registration.ClientRegistrationResponse;
 const DynamicRegistration = registration.DynamicRegistration;
+
+const InteractionPlan = struct {
+    method: formulas.Method,
+    steps: []const formulas.InteractionStep,
+    context: ?InteractionContext,
+};
+
+const InteractionContext = struct {
+    authorize_url: ?[]const u8 = null,
+    pkce_verifier: ?[]const u8 = null,
+    state: ?[]const u8 = null,
+    redirect_uri: ?[]const u8 = null,
+    device_code: ?[]const u8 = null,
+    user_code: ?[]const u8 = null,
+    verification_uri: ?[]const u8 = null,
+    verification_uri_complete: ?[]const u8 = null,
+    interval: ?u64 = null,
+    expires_in: ?u64 = null,
+};
+
+const ResolvedPlan = struct {
+    allocator: Allocator,
+    steps: []const formulas.InteractionStep,
+    context: InteractionContext,
+    allocations: std.ArrayListUnmanaged([]const u8),
+
+    fn deinit(self: *ResolvedPlan) void {
+        for (self.allocations.items) |item| {
+            self.allocator.free(item);
+        }
+        self.allocations.deinit(self.allocator);
+        self.allocator.free(self.steps);
+    }
+};
+
+const PlanOutput = struct {
+    id: []const u8,
+    label: []const u8,
+    methods: []const formulas.Method,
+    interaction: ?formulas.Interaction,
+    plan: ?InteractionPlan,
+};
 
 /// Allocator for FFI operations
 /// Note: Zig's GeneralPurposeAllocator is internally thread-safe, so no external mutex is needed.
@@ -617,6 +662,227 @@ export fn schlussel_string_free(str: ?[*:0]u8) void {
 }
 
 // ============================================================================
+// Formula plan operations
+// ============================================================================
+
+/// Emit a JSON interaction plan from a formula JSON document.
+/// Caller must free the returned string with schlussel_string_free.
+export fn schlussel_plan_from_formula_json(formula_json: [*c]const u8) ?[*:0]u8 {
+    clearLastError();
+    if (formula_json == null) {
+        setLastError(error.InvalidParameter);
+        return null;
+    }
+
+    const allocator = getAllocator();
+    var owned = formulas.loadFromJsonSlice(allocator, std.mem.span(formula_json)) catch |err| {
+        setLastError(err);
+        return null;
+    };
+    defer owned.deinit();
+
+    const plan = PlanOutput{
+        .id = owned.formula.id,
+        .label = owned.formula.label,
+        .methods = owned.formula.methods,
+        .interaction = owned.formula.interaction,
+        .plan = null,
+    };
+
+    var out = std.Io.Writer.Allocating.init(allocator);
+    defer out.deinit();
+    std.json.Stringify.value(plan, .{ .whitespace = .indent_2 }, &out.writer) catch |err| {
+        setLastError(err);
+        return null;
+    };
+
+    return dupeToC(out.written());
+}
+
+/// Emit a resolved JSON interaction plan from a formula JSON document.
+/// Caller must free the returned string with schlussel_string_free.
+export fn schlussel_plan_resolve_from_formula_json(
+    formula_json: [*c]const u8,
+    method: [*c]const u8,
+    client_id: [*c]const u8,
+    client_secret: [*c]const u8,
+    scope: [*c]const u8,
+    redirect_uri: [*c]const u8,
+) ?[*:0]u8 {
+    clearLastError();
+    if (formula_json == null or method == null) {
+        setLastError(error.InvalidParameter);
+        return null;
+    }
+
+    const allocator = getAllocator();
+    var owned = formulas.loadFromJsonSlice(allocator, std.mem.span(formula_json)) catch |err| {
+        setLastError(err);
+        return null;
+    };
+    defer owned.deinit();
+
+    const parsed_method = formulas.methodFromString(std.mem.span(method)) orelse {
+        setLastError(error.InvalidParameter);
+        return null;
+    };
+
+    var resolved = resolvePlanFromFormula(
+        allocator,
+        owned.asConst(),
+        parsed_method,
+        if (client_id != null) std.mem.span(client_id) else null,
+        if (client_secret != null) std.mem.span(client_secret) else null,
+        if (scope != null) std.mem.span(scope) else null,
+        if (redirect_uri != null) std.mem.span(redirect_uri) else "http://127.0.0.1:0/callback",
+    ) catch |err| {
+        setLastError(err);
+        return null;
+    };
+    defer resolved.deinit();
+
+    const plan = PlanOutput{
+        .id = owned.formula.id,
+        .label = owned.formula.label,
+        .methods = owned.formula.methods,
+        .interaction = owned.formula.interaction,
+        .plan = .{
+            .method = parsed_method,
+            .steps = resolved.steps,
+            .context = resolved.context,
+        },
+    };
+
+    var out = std.Io.Writer.Allocating.init(allocator);
+    defer out.deinit();
+    std.json.Stringify.value(plan, .{ .whitespace = .indent_2 }, &out.writer) catch |err| {
+        setLastError(err);
+        return null;
+    };
+
+    return dupeToC(out.written());
+}
+
+/// Execute a resolved plan using an existing client.
+export fn schlussel_run_plan(client: ?*SchlusselClient, plan_json: [*c]const u8) ?*SchlusselToken {
+    clearLastError();
+    const handle = client orelse {
+        setLastError(error.InvalidParameter);
+        return null;
+    };
+    if (plan_json == null) {
+        setLastError(error.InvalidParameter);
+        return null;
+    }
+    const allocator = getAllocator();
+
+    const parsed = std.json.parseFromSlice(PlanOutput, allocator, std.mem.span(plan_json), .{ .allocate = .alloc_always }) catch |err| {
+        setLastError(err);
+        return null;
+    };
+    defer parsed.deinit();
+
+    const plan = parsed.value.plan orelse {
+        setLastError(error.InvalidParameter);
+        return null;
+    };
+    const context = plan.context orelse {
+        setLastError(error.InvalidParameter);
+        return null;
+    };
+
+    var token: Token = undefined;
+
+    switch (plan.method) {
+        .device_code => {
+            const device_code = context.device_code orelse {
+                setLastError(error.InvalidParameter);
+                return null;
+            };
+            const interval = context.interval orelse 5;
+            token = handle.client.pollDeviceCode(device_code, interval, context.expires_in) catch |err| {
+                setLastError(err);
+                return null;
+            };
+        },
+        .authorization_code => {
+            const authorize_url = context.authorize_url orelse {
+                setLastError(error.InvalidParameter);
+                return null;
+            };
+            const pkce_verifier = context.pkce_verifier orelse {
+                setLastError(error.InvalidParameter);
+                return null;
+            };
+            const state = context.state orelse {
+                setLastError(error.InvalidParameter);
+                return null;
+            };
+            const redirect = context.redirect_uri orelse {
+                setLastError(error.InvalidParameter);
+                return null;
+            };
+
+            const port = parseRedirectPort(redirect) catch |err| {
+                setLastError(err);
+                return null;
+            };
+            var server = callback.CallbackServer.init(allocator, port) catch |err| {
+                setLastError(err);
+                return null;
+            };
+            defer server.deinit();
+
+            callback.openBrowser(authorize_url) catch {};
+
+            var result = server.waitForCallback(120) catch |err| {
+                setLastError(err);
+                return null;
+            };
+            defer result.deinit();
+
+            if (result.state) |callback_state| {
+                if (!std.mem.eql(u8, callback_state, state)) {
+                    setLastError(error.InvalidState);
+                    return null;
+                }
+            }
+
+            if (result.error_code != null) {
+                setLastError(error.AuthorizationDenied);
+                return null;
+            }
+
+            const code = result.code orelse {
+                setLastError(error.ServerError);
+                return null;
+            };
+            token = handle.client.exchangeCode(code, pkce_verifier, redirect) catch |err| {
+                setLastError(err);
+                return null;
+            };
+        },
+    }
+
+    const token_ptr = allocator.create(Token) catch |err| {
+        setLastError(err);
+        token.deinit();
+        return null;
+    };
+    token_ptr.* = token;
+
+    const token_handle = allocator.create(SchlusselToken) catch |err| {
+        setLastError(err);
+        token.deinit();
+        allocator.destroy(token_ptr);
+        return null;
+    };
+    token_handle.* = .{ .token = token_ptr };
+
+    return token_handle;
+}
+
+// ============================================================================
 // Helper functions
 // ============================================================================
 
@@ -625,6 +891,259 @@ fn dupeToC(str: []const u8) ?[*:0]u8 {
     const result = allocator.allocSentinel(u8, str.len, 0) catch return null;
     @memcpy(result, str);
     return result;
+}
+
+fn needsDynamicRedirectPort(redirect_uri: []const u8) bool {
+    return std.mem.indexOf(u8, redirect_uri, ":0/") != null or std.mem.endsWith(u8, redirect_uri, ":0");
+}
+
+fn parseRedirectPort(redirect_uri: []const u8) !u16 {
+    const scheme_idx = std.mem.indexOf(u8, redirect_uri, "://") orelse return error.InvalidParameter;
+    const after_scheme = redirect_uri[(scheme_idx + 3)..];
+    const path_idx = std.mem.indexOfScalar(u8, after_scheme, '/') orelse after_scheme.len;
+    const host_port = after_scheme[0..path_idx];
+
+    if (host_port.len == 0) return error.InvalidParameter;
+
+    if (host_port[0] == '[') {
+        const end_bracket = std.mem.indexOfScalar(u8, host_port, ']') orelse return error.InvalidParameter;
+        if (end_bracket + 1 >= host_port.len or host_port[end_bracket + 1] != ':') {
+            return error.InvalidParameter;
+        }
+        const port_str = host_port[(end_bracket + 2)..];
+        return std.fmt.parseInt(u16, port_str, 10);
+    }
+
+    const colon_idx = std.mem.indexOfScalar(u8, host_port, ':') orelse return error.InvalidParameter;
+    const port_str = host_port[(colon_idx + 1)..];
+    if (port_str.len == 0) return error.InvalidParameter;
+    return std.fmt.parseInt(u16, port_str, 10);
+}
+
+const Replacement = struct {
+    key: []const u8,
+    value: []const u8,
+};
+
+fn expandTemplate(
+    allocator: Allocator,
+    input: []const u8,
+    replacements: []const Replacement,
+) ![]const u8 {
+    var buf: std.ArrayListUnmanaged(u8) = .{};
+    errdefer buf.deinit(allocator);
+
+    var i: usize = 0;
+    while (i < input.len) {
+        if (input[i] == '{') {
+            const end = std.mem.indexOfScalarPos(u8, input, i + 1, '}');
+            if (end) |pos| {
+                const key = input[(i + 1)..pos];
+                var replaced = false;
+                for (replacements) |replacement| {
+                    if (std.mem.eql(u8, replacement.key, key)) {
+                        try buf.appendSlice(allocator, replacement.value);
+                        replaced = true;
+                        break;
+                    }
+                }
+                if (!replaced) {
+                    try buf.appendSlice(allocator, input[i .. pos + 1]);
+                }
+                i = pos + 1;
+                continue;
+            }
+        }
+        try buf.append(allocator, input[i]);
+        i += 1;
+    }
+
+    return buf.toOwnedSlice(allocator);
+}
+
+fn expandInteractionSteps(
+    allocator: Allocator,
+    steps: []const formulas.InteractionStep,
+    replacements: []const Replacement,
+    context: InteractionContext,
+    allocations: *std.ArrayListUnmanaged([]const u8),
+) !ResolvedPlan {
+    const steps_out = try allocator.alloc(formulas.InteractionStep, steps.len);
+    errdefer allocator.free(steps_out);
+
+    for (steps, 0..) |step, idx| {
+        var value_out: ?[]const u8 = null;
+        if (step.value) |value| {
+            const expanded = try expandTemplate(allocator, value, replacements);
+            try allocations.append(allocator, expanded);
+            value_out = expanded;
+        }
+
+        var note_out: ?[]const u8 = null;
+        if (step.note) |note| {
+            const expanded = try expandTemplate(allocator, note, replacements);
+            try allocations.append(allocator, expanded);
+            note_out = expanded;
+        }
+
+        steps_out[idx] = .{
+            .@"type" = step.@"type",
+            .value = value_out,
+            .note = note_out,
+        };
+    }
+
+    return .{
+        .allocator = allocator,
+        .steps = steps_out,
+        .context = context,
+        .allocations = allocations.*,
+    };
+}
+
+fn resolvePlanFromFormula(
+    allocator: Allocator,
+    formula: *const formulas.Formula,
+    method: formulas.Method,
+    client_id_override: ?[]const u8,
+    client_secret_override: ?[]const u8,
+    scope_override: ?[]const u8,
+    redirect_uri: []const u8,
+) !ResolvedPlan {
+    const default_device_steps = [_]formulas.InteractionStep{
+        .{ .@"type" = "open_url", .value = "{verification_uri}", .note = null },
+        .{ .@"type" = "enter_code", .value = "{user_code}", .note = null },
+        .{ .@"type" = "wait_for_token", .value = null, .note = null },
+    };
+    const default_code_steps = [_]formulas.InteractionStep{
+        .{ .@"type" = "open_url", .value = "{authorize_url}", .note = null },
+        .{ .@"type" = "wait_for_callback", .value = null, .note = null },
+    };
+
+    const steps_source = if (formula.interaction) |interaction|
+        interaction.auth_steps orelse switch (method) {
+            .device_code => default_device_steps[0..],
+            .authorization_code => default_code_steps[0..],
+        }
+    else switch (method) {
+        .device_code => default_device_steps[0..],
+        .authorization_code => default_code_steps[0..],
+    };
+
+    var replacements: std.ArrayListUnmanaged(Replacement) = .{};
+    defer replacements.deinit(allocator);
+
+    var allocations: std.ArrayListUnmanaged([]const u8) = .{};
+    errdefer {
+        for (allocations.items) |item| allocator.free(item);
+        allocations.deinit(allocator);
+    }
+
+    var context = InteractionContext{};
+
+    switch (method) {
+        .authorization_code => {
+            var resolved_redirect_uri = redirect_uri;
+            if (needsDynamicRedirectPort(redirect_uri)) {
+                var server = try callback.CallbackServer.init(allocator, 0);
+                defer server.deinit();
+                resolved_redirect_uri = try server.getCallbackUrl(allocator);
+                try allocations.append(allocator, resolved_redirect_uri);
+            } else {
+                const redirect_dup = try allocator.dupe(u8, redirect_uri);
+                try allocations.append(allocator, redirect_dup);
+                resolved_redirect_uri = redirect_dup;
+            }
+
+            var config = try oauth.configFromFormula(
+                allocator,
+                formula,
+                client_id_override,
+                client_secret_override,
+                resolved_redirect_uri,
+                scope_override,
+            );
+            defer config.deinit();
+
+            const pair = pkce.Pkce.generate();
+            const verifier = try allocator.dupe(u8, pair.getVerifier());
+            try allocations.append(allocator, verifier);
+            try replacements.append(allocator, .{ .key = "pkce_verifier", .value = verifier });
+
+            var state_bytes: [16]u8 = undefined;
+            std.crypto.random.bytes(&state_bytes);
+            var state: [22]u8 = undefined;
+            _ = std.base64.url_safe_no_pad.Encoder.encode(&state, &state_bytes);
+            const state_dup = try allocator.dupe(u8, &state);
+            try allocations.append(allocator, state_dup);
+            try replacements.append(allocator, .{ .key = "state", .value = state_dup });
+
+            const authorize_url = try callback.buildAuthorizationUrl(
+                allocator,
+                config.authorization_endpoint,
+                config.client_id,
+                resolved_redirect_uri,
+                config.scope,
+                &state,
+                pair.getChallenge(),
+            );
+            const authorize_dup = try allocator.dupe(u8, authorize_url);
+            allocator.free(authorize_url);
+            try allocations.append(allocator, authorize_dup);
+            try replacements.append(allocator, .{ .key = "authorize_url", .value = authorize_dup });
+
+            context.authorize_url = authorize_dup;
+            context.pkce_verifier = verifier;
+            context.state = state_dup;
+            context.redirect_uri = resolved_redirect_uri;
+        },
+        .device_code => {
+            var config = try oauth.configFromFormula(
+                allocator,
+                formula,
+                client_id_override,
+                client_secret_override,
+                redirect_uri,
+                scope_override,
+            );
+            defer config.deinit();
+
+            var storage = session.MemoryStorage.init(allocator);
+            defer storage.deinit();
+
+            var client = oauth.OAuthClient.init(allocator, config.toConfig(), storage.storage());
+            defer client.deinit();
+
+            var device_response = try client.requestDeviceCode();
+            defer device_response.deinit();
+
+            const verification_uri = try allocator.dupe(u8, device_response.verification_uri);
+            try allocations.append(allocator, verification_uri);
+            try replacements.append(allocator, .{ .key = "verification_uri", .value = verification_uri });
+            context.verification_uri = verification_uri;
+
+            if (device_response.verification_uri_complete) |uri| {
+                const complete_dup = try allocator.dupe(u8, uri);
+                try allocations.append(allocator, complete_dup);
+                try replacements.append(allocator, .{ .key = "verification_uri_complete", .value = complete_dup });
+                context.verification_uri_complete = complete_dup;
+            }
+
+            const user_code = try allocator.dupe(u8, device_response.user_code);
+            try allocations.append(allocator, user_code);
+            try replacements.append(allocator, .{ .key = "user_code", .value = user_code });
+            context.user_code = user_code;
+
+            const device_code = try allocator.dupe(u8, device_response.device_code);
+            try allocations.append(allocator, device_code);
+            try replacements.append(allocator, .{ .key = "device_code", .value = device_code });
+            context.device_code = device_code;
+            context.interval = device_response.interval;
+            context.expires_in = device_response.expires_in;
+        },
+    }
+
+    return expandInteractionSteps(allocator, steps_source, replacements.items, context, &allocations);
 }
 
 fn freeStringSlice(allocator: Allocator, slice: []const []const u8) void {

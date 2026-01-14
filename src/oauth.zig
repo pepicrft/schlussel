@@ -460,8 +460,39 @@ pub const OAuthClient = struct {
         const device_endpoint = self.config.device_authorization_endpoint orelse {
             return error.UnsupportedOperation;
         };
+        _ = device_endpoint;
 
         // Step 1: Request device code
+        var device_response = try self.requestDeviceCode();
+        defer device_response.deinit();
+
+        // Step 2: Display user code and verification URL
+        var stderr_writer = std.fs.File.stderr().writer(&.{});
+        const stderr = &stderr_writer.interface;
+        try stderr.print("\nTo authorize, visit: {s}\n", .{device_response.verification_uri});
+        try stderr.print("And enter code: {s}\n\n", .{device_response.user_code});
+
+        // Open browser if available
+        if (device_response.verification_uri_complete) |uri| {
+            callback.openBrowser(uri) catch {};
+        } else {
+            callback.openBrowser(device_response.verification_uri) catch {};
+        }
+
+        // Step 3: Poll for token
+        return try self.pollDeviceCode(
+            device_response.device_code,
+            device_response.interval,
+            device_response.expires_in,
+        );
+    }
+
+    /// Request a device code without polling or browser side effects.
+    pub fn requestDeviceCode(self: *OAuthClient) !DeviceAuthorizationResponse {
+        const device_endpoint = self.config.device_authorization_endpoint orelse {
+            return error.UnsupportedOperation;
+        };
+
         var http_client = HttpClient.init(self.allocator);
         defer http_client.deinit();
 
@@ -486,30 +517,26 @@ pub const OAuthClient = struct {
             return error.ServerError;
         }
 
-        // Parse device authorization response
         const parsed = try json.parseFromSlice(json.Value, self.allocator, response.body, .{});
         defer parsed.deinit();
 
-        var device_response = try parseDeviceResponse(self.allocator, parsed.value);
-        defer device_response.deinit();
+        return try parseDeviceResponse(self.allocator, parsed.value);
+    }
 
-        // Step 2: Display user code and verification URL
-        var stderr_writer = std.fs.File.stderr().writer(&.{});
-        const stderr = &stderr_writer.interface;
-        try stderr.print("\nTo authorize, visit: {s}\n", .{device_response.verification_uri});
-        try stderr.print("And enter code: {s}\n\n", .{device_response.user_code});
+    /// Poll the token endpoint with a previously issued device code.
+    pub fn pollDeviceCode(
+        self: *OAuthClient,
+        device_code: []const u8,
+        poll_interval: u64,
+        expires_in: ?u64,
+    ) !Token {
+        var http_client = HttpClient.init(self.allocator);
+        defer http_client.deinit();
 
-        // Open browser if available
-        if (device_response.verification_uri_complete) |uri| {
-            callback.openBrowser(uri) catch {};
-        } else {
-            callback.openBrowser(device_response.verification_uri) catch {};
-        }
-
-        // Step 3: Poll for token
         const start_time = @as(u64, @intCast(std.time.timestamp()));
-        var interval = device_response.interval;
+        var interval = poll_interval;
         if (interval < 5) interval = 5; // Minimum 5 seconds
+        const ttl = expires_in orelse 900;
 
         // Maximum polling iterations (safety limit to prevent infinite loops)
         // With 5s minimum interval and typical 15min expiry, max ~180 iterations is reasonable
@@ -518,7 +545,7 @@ pub const OAuthClient = struct {
 
         while (iterations < max_iterations) : (iterations += 1) {
             const now = @as(u64, @intCast(std.time.timestamp()));
-            if (now - start_time >= device_response.expires_in) {
+            if (ttl > 0 and now - start_time >= ttl) {
                 return error.DeviceCodeExpired;
             }
 
@@ -531,7 +558,7 @@ pub const OAuthClient = struct {
 
             try poll_body.appendSlice(self.allocator, "grant_type=urn:ietf:params:oauth:grant-type:device_code");
             try poll_body.appendSlice(self.allocator, "&device_code=");
-            try appendUrlEncoded(self.allocator, &poll_body, device_response.device_code);
+            try appendUrlEncoded(self.allocator, &poll_body, device_code);
             try poll_body.appendSlice(self.allocator, "&client_id=");
             try appendUrlEncoded(self.allocator, &poll_body, self.config.client_id);
 
@@ -1024,7 +1051,7 @@ test "configFromFormula: with public client without leaks" {
         \\{
         \\  "id": "test-provider",
         \\  "label": "Test",
-        \\  "flows": ["device_code"],
+        \\  "methods": ["device_code"],
         \\  "endpoints": {
         \\    "authorize": "https://test.com/authorize",
         \\    "token": "https://test.com/token",
@@ -1064,7 +1091,7 @@ test "configFromFormula: with client_id override without leaks" {
         \\{
         \\  "id": "test",
         \\  "label": "Test",
-        \\  "flows": ["device_code"],
+        \\  "methods": ["device_code"],
         \\  "endpoints": {
         \\    "authorize": "https://test.com/authorize",
         \\    "token": "https://test.com/token"
@@ -1101,7 +1128,7 @@ test "configFromFormula: missing client_id returns error" {
         \\{
         \\  "id": "no-clients",
         \\  "label": "No Clients",
-        \\  "flows": ["device_code"],
+        \\  "methods": ["device_code"],
         \\  "endpoints": {
         \\    "authorize": "https://test.com/authorize",
         \\    "token": "https://test.com/token"
