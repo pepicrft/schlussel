@@ -3,18 +3,11 @@
 //! ## Usage
 //!
 //! ```bash
-//! # Generate an interaction plan from a formula
-//! schlussel plan github
+//! # Generate a script from a formula
+//! schlussel script github
 //!
-//! # Device Code Flow with preset provider
-//! schlussel device github --client-id <id> --scope "repo user"
-//!
-//! # Device Code Flow with custom provider
-//! schlussel device --custom-provider \
-//!   --device-code-endpoint https://auth.example.com/oauth/device/code \
-//!   --token-endpoint https://auth.example.com/oauth/token \
-//!   --client-id <id> \
-//!   --scope "read write"
+//! # Resolve and execute directly
+//! schlussel run github --method device_code
 //!
 //! # Token management
 //! schlussel token get --key github_token
@@ -34,24 +27,147 @@ const FormulaPlan = struct {
     id: []const u8,
     label: []const u8,
     methods: []const formulas.Method,
-    interaction: ?formulas.Interaction,
+    script: ?formulas.Script,
+    storage: ?formulas.StorageHints,
 };
 
-const InteractionPlan = struct {
-    method: formulas.Method,
-    steps: []const formulas.InteractionStep,
-    context: ?InteractionContext,
-};
-
-const PlanOutput = struct {
+const ScriptOutput = struct {
     id: []const u8,
     label: []const u8,
     methods: []const formulas.Method,
-    interaction: ?formulas.Interaction,
-    plan: ?InteractionPlan,
+    script: ?formulas.Script,
+    storage: ?formulas.StorageHints,
+    method: ?formulas.Method,
+    context: ?ScriptContext,
 };
 
-const InteractionContext = struct {
+const TokenOutput = struct {
+    access_token: []const u8,
+    token_type: []const u8,
+    refresh_token: ?[]const u8,
+    scope: ?[]const u8,
+    expires_at: ?u64,
+    expires_in: ?u64,
+    id_token: ?[]const u8,
+};
+
+const RunResult = struct {
+    storage_key: []const u8,
+    method: formulas.Method,
+    token: TokenOutput,
+};
+
+const formula_schema_v1 =
+    \\{
+    \\  "$schema": "https://json-schema.org/draft/2020-12/schema",
+    \\  "title": "Schlussel Formula v1",
+    \\  "type": "object",
+    \\  "required": ["schema", "id", "label", "methods"],
+    \\  "properties": {
+    \\    "schema": { "const": "v1" },
+    \\    "id": { "type": "string" },
+    \\    "label": { "type": "string" },
+    \\    "methods": {
+    \\      "type": "array",
+    \\      "minItems": 1,
+    \\      "items": {
+    \\        "enum": [
+    \\          "authorization_code",
+    \\          "device_code",
+    \\          "api_key",
+    \\          "personal_access_token"
+    \\        ]
+    \\      }
+    \\    },
+    \\    "endpoints": {
+    \\      "type": "object",
+    \\      "properties": {
+    \\        "authorize": { "type": "string" },
+    \\        "token": { "type": "string" },
+    \\        "device": { "type": "string" }
+    \\      },
+    \\      "additionalProperties": false
+    \\    },
+    \\    "scope": { "type": "string" },
+    \\    "public_clients": {
+    \\      "type": "array",
+    \\      "items": {
+    \\        "type": "object",
+    \\        "required": ["name", "id"],
+    \\        "properties": {
+    \\          "name": { "type": "string" },
+    \\          "id": { "type": "string" },
+    \\          "secret": { "type": "string" },
+    \\          "source": { "type": "string" },
+    \\          "methods": {
+    \\            "type": "array",
+    \\            "items": { "type": "string" }
+    \\          }
+    \\        },
+    \\        "additionalProperties": false
+    \\      }
+    \\    },
+    \\    "script": {
+    \\      "type": "object",
+    \\      "properties": {
+    \\        "register": {
+    \\          "type": "object",
+    \\          "required": ["url", "steps"],
+    \\          "properties": {
+    \\            "url": { "type": "string" },
+    \\            "steps": { "type": "array", "items": { "type": "string" } }
+    \\          },
+    \\          "additionalProperties": false
+    \\        },
+    \\        "steps": {
+    \\          "type": "array",
+    \\          "items": {
+    \\            "type": "object",
+    \\            "required": ["type"],
+    \\            "properties": {
+    \\              "type": { "type": "string" },
+    \\              "value": { "type": "string" },
+    \\              "note": { "type": "string" }
+    \\            },
+    \\            "additionalProperties": false
+    \\          }
+    \\        }
+    \\      },
+    \\      "additionalProperties": false
+    \\    },
+    \\    "storage": {
+    \\      "type": "object",
+    \\      "properties": {
+    \\        "key_template": { "type": "string" },
+    \\        "label": { "type": "string" },
+    \\        "value_label": { "type": "string" },
+    \\        "identity_label": { "type": "string" },
+    \\        "identity_hint": { "type": "string" },
+    \\        "rotation_url": { "type": "string" },
+    \\        "rotation_hint": { "type": "string" }
+    \\      },
+    \\      "additionalProperties": false
+    \\    },
+    \\    "quirks": {
+    \\      "type": "object",
+    \\      "properties": {
+    \\        "dynamic_registration_endpoint": { "type": "string" },
+    \\        "token_response": { "type": "string" },
+    \\        "extra_response_fields": {
+    \\          "type": "array",
+    \\          "items": { "type": "string" }
+    \\        },
+    \\        "device_code_poll_endpoint": { "type": "string" },
+    \\        "device_code_browser_url": { "type": "string" }
+    \\      },
+    \\      "additionalProperties": false
+    \\    }
+    \\  },
+    \\  "additionalProperties": false
+    \\}
+;
+
+const ScriptContext = struct {
     authorize_url: ?[]const u8 = null,
     pkce_verifier: ?[]const u8 = null,
     state: ?[]const u8 = null,
@@ -64,13 +180,13 @@ const InteractionContext = struct {
     expires_in: ?u64 = null,
 };
 
-const ResolvedPlanOwned = struct {
+const ResolvedScript = struct {
     allocator: Allocator,
-    steps: []const formulas.InteractionStep,
-    context: InteractionContext,
+    steps: []const formulas.ScriptStep,
+    context: ScriptContext,
     allocations: std.ArrayListUnmanaged([]const u8),
 
-    fn deinit(self: *ResolvedPlanOwned) void {
+    fn deinit(self: *ResolvedScript) void {
         for (self.allocations.items) |item| {
             self.allocator.free(item);
         }
@@ -147,14 +263,14 @@ fn parseRedirectPort(redirect_uri: []const u8) !u16 {
     return std.fmt.parseInt(u16, port_str, 10);
 }
 
-fn expandInteractionSteps(
+fn expandScriptSteps(
     allocator: Allocator,
-    steps: []const formulas.InteractionStep,
+    steps: []const formulas.ScriptStep,
     replacements: []const Replacement,
-    context: InteractionContext,
+    context: ScriptContext,
     allocations: *std.ArrayListUnmanaged([]const u8),
-) !ResolvedPlanOwned {
-    const steps_out = try allocator.alloc(formulas.InteractionStep, steps.len);
+) !ResolvedScript {
+    const steps_out = try allocator.alloc(formulas.ScriptStep, steps.len);
     errdefer allocator.free(steps_out);
 
     for (steps, 0..) |step, idx| {
@@ -187,7 +303,7 @@ fn expandInteractionSteps(
     };
 }
 
-fn resolveInteractionSteps(
+fn resolveScriptSteps(
     allocator: Allocator,
     formula: *const formulas.Formula,
     method: formulas.Method,
@@ -195,25 +311,30 @@ fn resolveInteractionSteps(
     client_secret_override: ?[]const u8,
     scope_override: ?[]const u8,
     redirect_uri: []const u8,
-) !ResolvedPlanOwned {
-    const default_device_steps = [_]formulas.InteractionStep{
+) !ResolvedScript {
+    const default_device_steps = [_]formulas.ScriptStep{
         .{ .@"type" = "open_url", .value = "{verification_uri}", .note = null },
         .{ .@"type" = "enter_code", .value = "{user_code}", .note = null },
         .{ .@"type" = "wait_for_token", .value = null, .note = null },
     };
-    const default_code_steps = [_]formulas.InteractionStep{
+    const default_code_steps = [_]formulas.ScriptStep{
         .{ .@"type" = "open_url", .value = "{authorize_url}", .note = null },
         .{ .@"type" = "wait_for_callback", .value = null, .note = null },
     };
+    const default_api_key_steps = [_]formulas.ScriptStep{
+        .{ .@"type" = "copy_key", .value = null, .note = "Paste your API key into the agent." },
+    };
 
-    const steps_source = if (formula.interaction) |interaction|
-        interaction.auth_steps orelse switch (method) {
+    const steps_source = if (formula.script) |script|
+        script.steps orelse switch (method) {
             .device_code => default_device_steps[0..],
             .authorization_code => default_code_steps[0..],
+            .api_key, .personal_access_token => default_api_key_steps[0..],
         }
     else switch (method) {
         .device_code => default_device_steps[0..],
         .authorization_code => default_code_steps[0..],
+        .api_key, .personal_access_token => default_api_key_steps[0..],
     };
 
     var replacements: std.ArrayListUnmanaged(Replacement) = .{};
@@ -227,7 +348,7 @@ fn resolveInteractionSteps(
         allocations.deinit(allocator);
     }
 
-    var context = InteractionContext{};
+    var context = ScriptContext{};
 
     switch (method) {
         .authorization_code => {
@@ -327,48 +448,87 @@ fn resolveInteractionSteps(
             context.interval = device_response.interval;
             context.expires_in = device_response.expires_in;
         },
+        .api_key, .personal_access_token => {},
     }
 
-    return expandInteractionSteps(allocator, steps_source, replacements.items, context, &allocations);
+    return expandScriptSteps(allocator, steps_source, replacements.items, context, &allocations);
 }
 
 fn cmdRun(allocator: Allocator, args: []const []const u8, stdout: anytype, stderr: anytype) !void {
     if (args.len < 3) {
-        try stderr.print("Error: Missing provider name\n\n", .{});
-        try stderr.print("USAGE:\n    schlussel run <provider> [options]\n\n", .{});
+        try stderr.print("Error: Missing provider name or script input\n\n", .{});
+        try stderr.print("USAGE:\n    schlussel run <provider> [options]\n", .{});
+        try stderr.print("    schlussel run - [options]\n", .{});
+        try stderr.print("    schlussel run --script-json <path|-> [options]\n\n", .{});
         try stderr.print("OPTIONS:\n", .{});
-        try stderr.print("    --plan-json <path|- >         Resolved plan JSON from `schlussel plan --resolve`\n", .{});
+        try stderr.print("    --script-json <path|- >       Resolved script JSON from `schlussel script --resolve`\n", .{});
+        try stderr.print("    --method <name>               Authentication method (required if multiple methods)\n", .{});
+        try stderr.print("    --redirect-uri <uri>          Redirect URI for auth code (default: http://127.0.0.1:0/callback)\n", .{});
         try stderr.print("    --formula-json <path>         Load a declarative formula JSON\n", .{});
         try stderr.print("    --client-id <id>              OAuth client ID override\n", .{});
         try stderr.print("    --client-secret <secret>      OAuth client secret override\n", .{});
         try stderr.print("    --scope <scopes>              OAuth scopes (space-separated)\n", .{});
+        try stderr.print("    --credential <value>          Secret for non-OAuth methods (api_key/personal_access_token)\n", .{});
+        try stderr.print("    --identity <value>            Identity label for storage key templates\n", .{});
         try stderr.print("    --open-browser <true|false>   Open the authorization URL (default: true)\n", .{});
+        try stderr.print("    --json                        Emit machine-readable JSON output\n", .{});
         try stderr.print("\n", .{});
         return error.MissingArguments;
     }
 
-    const provider_arg = args[2];
+    var provider_arg: ?[]const u8 = null;
+    var start_index: usize = 2;
+    var implicit_script_stdin = false;
+    if (args.len >= 3) {
+        if (std.mem.eql(u8, args[2], "-")) {
+            implicit_script_stdin = true;
+            start_index = 3;
+        } else if (!std.mem.startsWith(u8, args[2], "-")) {
+            provider_arg = args[2];
+            start_index = 3;
+        } else {
+            start_index = 2;
+        }
+    }
 
-    var plan_json_path: ?[]const u8 = null;
+    var script_json_path: ?[]const u8 = if (implicit_script_stdin) "-" else null;
     var formula_json_path: ?[]const u8 = null;
+    var method_override: ?[]const u8 = null;
     var client_id_override: ?[]const u8 = null;
     var client_secret_override: ?[]const u8 = null;
     var scope_override: ?[]const u8 = null;
+    var redirect_uri: []const u8 = "http://127.0.0.1:0/callback";
+    var credential_override: ?[]const u8 = null;
+    var identity_override: ?[]const u8 = null;
     var open_browser = true;
+    var json_output = false;
 
-    var i: usize = 3;
+    var i: usize = start_index;
     while (i < args.len) : (i += 1) {
         const arg = args[i];
+        if (std.mem.eql(u8, arg, "--json")) {
+            json_output = true;
+            continue;
+        }
+        if (std.mem.eql(u8, arg, "-")) {
+            if (script_json_path == null) {
+                script_json_path = "-";
+                continue;
+            }
+        }
         if (i + 1 >= args.len) {
             try stderr.print("Error: Missing value for option '{s}'\n", .{arg});
             return error.MissingOptionValue;
         }
 
-        if (std.mem.eql(u8, arg, "--plan-json")) {
-            plan_json_path = args[i + 1];
+        if (std.mem.eql(u8, arg, "--script-json")) {
+            script_json_path = args[i + 1];
             i += 1;
         } else if (std.mem.eql(u8, arg, "--formula-json")) {
             formula_json_path = args[i + 1];
+            i += 1;
+        } else if (std.mem.eql(u8, arg, "--method")) {
+            method_override = args[i + 1];
             i += 1;
         } else if (std.mem.eql(u8, arg, "--client-id")) {
             client_id_override = args[i + 1];
@@ -378,6 +538,15 @@ fn cmdRun(allocator: Allocator, args: []const []const u8, stdout: anytype, stder
             i += 1;
         } else if (std.mem.eql(u8, arg, "--scope")) {
             scope_override = args[i + 1];
+            i += 1;
+        } else if (std.mem.eql(u8, arg, "--redirect-uri")) {
+            redirect_uri = args[i + 1];
+            i += 1;
+        } else if (std.mem.eql(u8, arg, "--credential")) {
+            credential_override = args[i + 1];
+            i += 1;
+        } else if (std.mem.eql(u8, arg, "--identity")) {
+            identity_override = args[i + 1];
             i += 1;
         } else if (std.mem.eql(u8, arg, "--open-browser")) {
             const value = args[i + 1];
@@ -396,31 +565,46 @@ fn cmdRun(allocator: Allocator, args: []const []const u8, stdout: anytype, stder
         }
     }
 
-    if (plan_json_path == null) {
-        try stderr.print("Error: --plan-json is required\n", .{});
-        return error.MissingArguments;
+    var script_parsed: ?std.json.Parsed(ScriptOutput) = null;
+    defer if (script_parsed) |*parsed| parsed.deinit();
+    var resolved_script: ?ResolvedScript = null;
+    defer if (resolved_script) |*owned| owned.deinit();
+
+    var script_steps: []const formulas.ScriptStep = &.{};
+    var script_context: ?ScriptContext = null;
+    var script_method: ?formulas.Method = null;
+    if (script_json_path != null) {
+        var script_bytes: []const u8 = undefined;
+        if (std.mem.eql(u8, script_json_path.?, "-")) {
+            const stdin_file = std.fs.File.stdin();
+            script_bytes = try stdin_file.readToEndAlloc(allocator, 1024 * 1024);
+        } else {
+            const script_file = try std.fs.cwd().openFile(script_json_path.?, .{});
+            defer script_file.close();
+            script_bytes = try script_file.readToEndAlloc(allocator, 1024 * 1024);
+        }
+        defer allocator.free(script_bytes);
+
+        script_parsed = try std.json.parseFromSlice(ScriptOutput, allocator, script_bytes, .{ .allocate = .alloc_always });
+        const parsed = script_parsed.?.value;
+        if (parsed.script == null or parsed.script.?.steps == null) {
+            try stderr.print("Error: script JSON missing resolved steps\n", .{});
+            return error.InvalidParameter;
+        };
+        if (provider_arg == null) {
+            provider_arg = parsed.id;
+        }
+        if (method_override != null) {
+            try stderr.print("Error: --method cannot be used with --script-json\n", .{});
+            return error.InvalidParameter;
+        }
+        script_steps = parsed.script.?.steps.?;
+        script_context = parsed.context;
+        script_method = parsed.method;
     }
 
-    var plan_bytes: []const u8 = undefined;
-    if (std.mem.eql(u8, plan_json_path.?, "-")) {
-        const stdin_file = std.fs.File.stdin();
-        plan_bytes = try stdin_file.readToEndAlloc(allocator, 1024 * 1024);
-    } else {
-        const plan_file = try std.fs.cwd().openFile(plan_json_path.?, .{});
-        defer plan_file.close();
-        plan_bytes = try plan_file.readToEndAlloc(allocator, 1024 * 1024);
-    }
-    defer allocator.free(plan_bytes);
-
-    const plan_parsed = try std.json.parseFromSlice(PlanOutput, allocator, plan_bytes, .{ .allocate = .alloc_always });
-    defer plan_parsed.deinit();
-
-    const plan_value = plan_parsed.value.plan orelse {
-        try stderr.print("Error: plan JSON missing resolved plan data\n", .{});
-        return error.InvalidParameter;
-    };
-    const context = plan_value.context orelse {
-        try stderr.print("Error: plan JSON missing context\n", .{});
+    const provider_name = provider_arg orelse {
+        try stderr.print("Error: Missing provider name or script input\n", .{});
         return error.InvalidParameter;
     };
 
@@ -433,21 +617,62 @@ fn cmdRun(allocator: Allocator, args: []const []const u8, stdout: anytype, stder
 
     var formula_ptr: ?*const formulas.Formula = null;
     if (thirdPartyFormula) |owner| {
-        if (!std.mem.eql(u8, owner.formula.id, provider_arg)) {
+        if (!std.mem.eql(u8, owner.formula.id, provider_name)) {
             try stderr.print(
                 "Warning: formula id '{s}' does not match provider '{s}'\n",
-                .{ owner.formula.id, provider_arg },
+                .{ owner.formula.id, provider_name },
             );
         }
         formula_ptr = owner.asConst();
     } else {
-        formula_ptr = try formulas.findById(allocator, provider_arg);
+        formula_ptr = try formulas.findById(allocator, provider_name);
     }
 
     const formula = formula_ptr orelse {
-        try stderr.print("Error: Unknown provider '{s}'\n", .{provider_arg});
+        try stderr.print("Error: Unknown provider '{s}'\n", .{provider_name});
         return error.UnknownProvider;
     };
+
+    if (script_json_path == null) {
+        var method = formula.methods[0];
+        if (method_override) |method_name| {
+            method = formulas.methodFromString(method_name) orelse {
+                try stderr.print("Error: Unknown method '{s}'\n", .{method_name});
+                return error.InvalidMethod;
+            };
+        } else if (formula.methods.len != 1) {
+            try stderr.print("Error: --method is required when multiple methods are available\n", .{});
+            return error.MissingArguments;
+        }
+
+        resolved_script = try resolveScriptSteps(
+            allocator,
+            formula,
+            method,
+            client_id_override,
+            client_secret_override,
+            scope_override,
+            redirect_uri,
+        );
+        script_steps = resolved_script.?.steps;
+        script_context = resolved_script.?.context;
+        script_method = method;
+    }
+
+    const method = script_method orelse {
+        try stderr.print("Error: script JSON missing method\n", .{});
+        return error.InvalidParameter;
+    };
+    const context = script_context orelse switch (method) {
+        .device_code, .authorization_code => {
+            try stderr.print("Error: script JSON missing context\n", .{});
+            return error.InvalidParameter;
+        },
+        .api_key, .personal_access_token => ScriptContext{},
+    };
+
+    const storage_key = try storageKeyFromFormula(allocator, formula, method, identity_override);
+    defer allocator.free(storage_key);
 
     const redirect_uri = context.redirect_uri orelse "http://127.0.0.1:0/callback";
     var owned_config = oauth.configFromFormula(
@@ -472,12 +697,24 @@ fn cmdRun(allocator: Allocator, args: []const []const u8, stdout: anytype, stder
     var client = oauth.OAuthClient.init(allocator, owned_config.toConfig(), storage.storage());
     defer client.deinit();
 
+    const info_out = if (json_output) stderr else stdout;
     var token: session.Token = undefined;
 
-    switch (plan_value.method) {
+    if (script_steps.len > 0) {
+        try info_out.print("\nScript steps:\n", .{});
+        for (script_steps, 0..) |step, idx| {
+            if (step.note) |note| {
+                try info_out.print("  {d}. {s} ({s})\n", .{ idx + 1, step.@"type", note });
+            } else {
+                try info_out.print("  {d}. {s}\n", .{ idx + 1, step.@"type" });
+            }
+        }
+    }
+
+    switch (method) {
         .device_code => {
             const device_code = context.device_code orelse {
-                try stderr.print("Error: plan context missing device_code\n", .{});
+                try stderr.print("Error: script context missing device_code\n", .{});
                 return error.InvalidParameter;
             };
             const interval = context.interval orelse 5;
@@ -488,19 +725,19 @@ fn cmdRun(allocator: Allocator, args: []const []const u8, stdout: anytype, stder
         },
         .authorization_code => {
             const authorize_url = context.authorize_url orelse {
-                try stderr.print("Error: plan context missing authorize_url\n", .{});
+                try stderr.print("Error: script context missing authorize_url\n", .{});
                 return error.InvalidParameter;
             };
             const pkce_verifier = context.pkce_verifier orelse {
-                try stderr.print("Error: plan context missing pkce_verifier\n", .{});
+                try stderr.print("Error: script context missing pkce_verifier\n", .{});
                 return error.InvalidParameter;
             };
             const state = context.state orelse {
-                try stderr.print("Error: plan context missing state\n", .{});
+                try stderr.print("Error: script context missing state\n", .{});
                 return error.InvalidParameter;
             };
             const callback_uri = context.redirect_uri orelse {
-                try stderr.print("Error: plan context missing redirect_uri\n", .{});
+                try stderr.print("Error: script context missing redirect_uri\n", .{});
                 return error.InvalidParameter;
             };
 
@@ -509,11 +746,11 @@ fn cmdRun(allocator: Allocator, args: []const []const u8, stdout: anytype, stder
             defer server.deinit();
 
             if (open_browser) {
-                try stdout.print("\nOpening browser for authorization...\n", .{});
-                try stdout.print("If the browser doesn't open, visit:\n{s}\n\n", .{authorize_url});
+                try info_out.print("\nOpening browser for authorization...\n", .{});
+                try info_out.print("If the browser doesn't open, visit:\n{s}\n\n", .{authorize_url});
                 callback.openBrowser(authorize_url) catch {};
             } else {
-                try stdout.print("\nVisit the following URL to authorize:\n{s}\n\n", .{authorize_url});
+                try info_out.print("\nVisit the following URL to authorize:\n{s}\n\n", .{authorize_url});
             }
 
             var result = try server.waitForCallback(120);
@@ -535,27 +772,114 @@ fn cmdRun(allocator: Allocator, args: []const []const u8, stdout: anytype, stder
                 return err;
             };
         },
+        .api_key, .personal_access_token => {
+            var secret_owned: ?[]const u8 = null;
+            defer if (secret_owned) |value| allocator.free(value);
+            const secret = credential_override orelse blk: {
+                try info_out.print("\nEnter {s}: ", .{switch (method) {
+                    .api_key => "API key",
+                    .personal_access_token => "personal access token",
+                    else => "credential",
+                }});
+                const stdin_reader = std.fs.File.stdin().reader();
+                const line = (try stdin_reader.readUntilDelimiterOrEofAlloc(allocator, '\n', 1024 * 1024)) orelse {
+                    return error.EndOfStream;
+                };
+                defer allocator.free(line);
+                const trimmed = std.mem.trimRight(u8, line, "\r\n");
+                if (trimmed.len == 0) {
+                    try stderr.print("Error: credential cannot be empty\n", .{});
+                    return error.InvalidParameter;
+                }
+                secret_owned = try allocator.dupe(u8, trimmed);
+                break :blk secret_owned.?;
+            };
+
+            token = try tokenFromCredential(allocator, method, secret);
+        },
     }
     defer token.deinit();
 
-    try stdout.print("\n=== Authorization Successful! ===\n\n", .{});
-    try stdout.print("Token type: {s}\n", .{token.token_type});
-    if (token.scope) |s| {
-        try stdout.print("Scope: {s}\n", .{s});
+    try client.saveToken(storage_key, token);
+    if (json_output) {
+        const result = RunResult{
+            .storage_key = storage_key,
+            .method = method,
+            .token = tokenToOutput(token),
+        };
+        var out = std.Io.Writer.Allocating.init(allocator);
+        defer out.deinit();
+        try std.json.Stringify.value(result, .{ .whitespace = .indent_2 }, &out.writer);
+        try stdout.print("{s}\n", .{out.written()});
+    } else {
+        try stdout.print("\n=== Authorization Successful! ===\n\n", .{});
+        try stdout.print("Token type: {s}\n", .{token.token_type});
+        if (token.scope) |s| {
+            try stdout.print("Scope: {s}\n", .{s});
+        }
+        if (token.expires_at) |expires_at| {
+            try stdout.print("Expires at: {d} (Unix timestamp)\n", .{expires_at});
+        }
+        try stdout.print("\nToken saved with key: {s}\n", .{storage_key});
     }
-    if (token.expires_at) |expires_at| {
-        try stdout.print("Expires at: {d} (Unix timestamp)\n", .{expires_at});
+}
+
+fn tokenFromCredential(
+    allocator: Allocator,
+    method: formulas.Method,
+    credential: []const u8,
+) !session.Token {
+    if (credential.len == 0) {
+        return error.InvalidParameter;
     }
 
-    try client.saveToken(provider_arg, token);
-    try stdout.print("\nToken saved with key: {s}\n", .{provider_arg});
+    const token_type = switch (method) {
+        .api_key => "api_key",
+        .personal_access_token => "personal_access_token",
+        else => return error.UnsupportedOperation,
+    };
+
+    return session.Token.init(allocator, credential, token_type);
+}
+
+fn tokenToOutput(token: session.Token) TokenOutput {
+    return .{
+        .access_token = token.access_token,
+        .token_type = token.token_type,
+        .refresh_token = token.refresh_token,
+        .scope = token.scope,
+        .expires_at = token.expires_at,
+        .expires_in = token.expires_in,
+        .id_token = token.id_token,
+    };
+}
+
+fn storageKeyFromFormula(
+    allocator: Allocator,
+    formula: *const formulas.Formula,
+    method: formulas.Method,
+    identity: ?[]const u8,
+) ![]const u8 {
+    const default_template = "{formula_id}:{method}";
+    const template = if (formula.storage) |storage| storage.key_template orelse default_template else default_template;
+    if (identity == null and std.mem.indexOf(u8, template, "{identity}") != null) {
+        return error.InvalidParameter;
+    }
+
+    var replacements = std.ArrayListUnmanaged(Replacement){};
+    defer replacements.deinit(allocator);
+    try replacements.append(allocator, .{ .key = "formula_id", .value = formula.id });
+    try replacements.append(allocator, .{ .key = "method", .value = @tagName(method) });
+    if (identity) |value| {
+        try replacements.append(allocator, .{ .key = "identity", .value = value });
+    }
+
+    return expandTemplate(allocator, template, replacements.items);
 }
 
 const Command = enum {
-    plan,
+    script,
     run,
-    device,
-    code,
     token,
     register,
     register_read,
@@ -565,10 +889,8 @@ const Command = enum {
 
     pub fn fromString(str: []const u8) ?Command {
         const eql = std.mem.eql;
-        if (eql(u8, str, "plan")) return .plan;
+        if (eql(u8, str, "script")) return .script;
         if (eql(u8, str, "run")) return .run;
-        if (eql(u8, str, "device")) return .device;
-        if (eql(u8, str, "code")) return .code;
         if (eql(u8, str, "token")) return .token;
         if (eql(u8, str, "register")) return .register;
         if (eql(u8, str, "register-read")) return .register_read;
@@ -614,10 +936,8 @@ pub fn main() !void {
 
     // Execute command
     switch (command) {
-        .plan => try cmdPlan(allocator, args, stdout, stderr),
+        .script => try cmdScript(allocator, args, stdout, stderr),
         .run => try cmdRun(allocator, args, stdout, stderr),
-        .device => try cmdDevice(allocator, args, stdout, stderr),
-        .code => try cmdCode(allocator, args, stdout, stderr),
         .token => try cmdToken(allocator, args, stdout, stderr),
         .register => try cmdRegister(allocator, args, stdout, stderr),
         .register_read => try cmdRegisterRead(allocator, args, stdout, stderr),
@@ -635,10 +955,8 @@ fn printUsage(writer: anytype) !void {
         \\    schlussel <command> [options]
         \\
         \\COMMANDS:
-        \\    plan                Emit an interaction plan for a provider
-        \\    run                 Execute a resolved interaction plan
-        \\    device              Device Code Flow authentication
-        \\    code                Authorization Code Flow with PKCE
+        \\    script              Emit a script for a provider
+        \\    run                 Execute a resolved script or resolve+run
         \\    token <action>      Token management operations
         \\    register            Dynamically register OAuth client
         \\    register-read       Read dynamic client configuration
@@ -652,20 +970,23 @@ fn printUsage(writer: anytype) !void {
         \\    delete              Delete a stored token
         \\
         \\EXAMPLES:
-        \\    # Emit a JSON interaction plan
-        \\    schlussel plan github
+        \\    # Emit a JSON script
+        \\    schlussel script github
         \\
-        \\    # Emit a JSON interaction plan from a custom formula
-        \\    schlussel plan acme --formula-json ~/formulas/acme.json
+        \\    # Emit a JSON script from a custom formula
+        \\    schlussel script acme --formula-json ~/formulas/acme.json
         \\
-        \\    # Execute a resolved interaction plan
-        \\    schlussel run github --plan-json plan.json
+        \\    # Print the formula schema
+        \\    schlussel script --json-schema
         \\
-        \\    # Device Code Flow with GitHub
-        \\    schlussel device github --client-id <id> --scope "repo user"
+        \\    # Execute a resolved script
+        \\    schlussel run github --script-json script.json
         \\
-        \\    # Device Code Flow with a formula JSON
-        \\    schlussel device slack --formula-json ~/formulas/slack.json --client-id <id>
+        \\    # Resolve and run in one command
+        \\    schlussel run github --method device_code
+        \\
+        \\    # Execute a resolved script from stdin
+        \\    schlussel run --script-json -
         \\
         \\    # Register a new OAuth client
         \\    schlussel register https://auth.example.com/register \
@@ -682,18 +1003,122 @@ fn printUsage(writer: anytype) !void {
     );
 }
 
-fn cmdPlan(allocator: Allocator, args: []const []const u8, stdout: anytype, stderr: anytype) !void {
+test "tokenFromCredential sets token type for non-oauth methods" {
+    const allocator = std.testing.allocator;
+
+    var api_token = try tokenFromCredential(allocator, .api_key, "api-secret");
+    defer api_token.deinit();
+    try std.testing.expectEqualStrings("api_key", api_token.token_type);
+    try std.testing.expectEqualStrings("api-secret", api_token.access_token);
+
+    var pat_token = try tokenFromCredential(allocator, .personal_access_token, "pat-secret");
+    defer pat_token.deinit();
+    try std.testing.expectEqualStrings("personal_access_token", pat_token.token_type);
+    try std.testing.expectEqualStrings("pat-secret", pat_token.access_token);
+}
+
+test "storageKeyFromFormula expands default template" {
+    const allocator = std.testing.allocator;
+
+    const formula = formulas.Formula{
+        .schema = "v1",
+        .id = "acme",
+        .label = "Acme API",
+        .methods = &.{.api_key},
+        .authorization_endpoint = null,
+        .token_endpoint = null,
+        .device_authorization_endpoint = null,
+        .scope = null,
+        .storage = null,
+        .public_clients = null,
+        .script = null,
+        .quirks = null,
+    };
+
+    const key = try storageKeyFromFormula(allocator, &formula, .api_key, null);
+    defer allocator.free(key);
+    try std.testing.expectEqualStrings("acme:api_key", key);
+}
+
+test "storageKeyFromFormula uses identity placeholder when provided" {
+    const allocator = std.testing.allocator;
+
+    const formula = formulas.Formula{
+        .schema = "v1",
+        .id = "acme",
+        .label = "Acme API",
+        .methods = &.{.api_key},
+        .authorization_endpoint = null,
+        .token_endpoint = null,
+        .device_authorization_endpoint = null,
+        .scope = null,
+        .storage = .{
+            .key_template = "{formula_id}:{method}:{identity}",
+            .label = null,
+            .value_label = null,
+            .identity_label = null,
+            .identity_hint = null,
+            .rotation_url = null,
+            .rotation_hint = null,
+        },
+        .public_clients = null,
+        .script = null,
+        .quirks = null,
+    };
+
+    const key = try storageKeyFromFormula(allocator, &formula, .api_key, "alice");
+    defer allocator.free(key);
+    try std.testing.expectEqualStrings("acme:api_key:alice", key);
+}
+
+test "storageKeyFromFormula requires identity when template references it" {
+    const allocator = std.testing.allocator;
+
+    const formula = formulas.Formula{
+        .schema = "v1",
+        .id = "acme",
+        .label = "Acme API",
+        .methods = &.{.api_key},
+        .authorization_endpoint = null,
+        .token_endpoint = null,
+        .device_authorization_endpoint = null,
+        .scope = null,
+        .storage = .{
+            .key_template = "{formula_id}:{method}:{identity}",
+            .label = null,
+            .value_label = null,
+            .identity_label = null,
+            .identity_hint = null,
+            .rotation_url = null,
+            .rotation_hint = null,
+        },
+        .public_clients = null,
+        .script = null,
+        .quirks = null,
+    };
+
+    const result = storageKeyFromFormula(allocator, &formula, .api_key, null);
+    try std.testing.expectError(error.InvalidParameter, result);
+}
+
+fn cmdScript(allocator: Allocator, args: []const []const u8, stdout: anytype, stderr: anytype) !void {
+    if (args.len >= 3 and std.mem.eql(u8, args[2], "--json-schema")) {
+        try stdout.print("{s}\n", .{formula_schema_v1});
+        return;
+    }
+
     if (args.len < 3) {
         try stderr.print("Error: Missing provider name\n\n", .{});
-        try stderr.print("USAGE:\n    schlussel plan <provider> [options]\n\n", .{});
+        try stderr.print("USAGE:\n    schlussel script <provider> [options]\n\n", .{});
         try stderr.print("OPTIONS:\n", .{});
+        try stderr.print("    --json-schema                 Print the formula JSON schema\n", .{});
         try stderr.print("    --formula-json <path>         Load a declarative formula JSON\n", .{});
         try stderr.print("    --method <name>               Filter to a single method\n", .{});
         try stderr.print("    --client-id <id>              OAuth client ID override\n", .{});
         try stderr.print("    --client-secret <secret>      OAuth client secret override\n", .{});
         try stderr.print("    --scope <scopes>              OAuth scopes (space-separated)\n", .{});
-        try stderr.print("    --redirect-uri <uri>          Redirect URI (default: http://127.0.0.1/callback)\n", .{});
-        try stderr.print("    --resolve                      Resolve placeholders into concrete steps\n", .{});
+        try stderr.print("    --redirect-uri <uri>          Redirect URI (default: http://127.0.0.1:0/callback)\n", .{});
+        try stderr.print("    --resolve                      Resolve placeholders into a script context\n", .{});
         return error.MissingArguments;
     }
 
@@ -704,7 +1129,7 @@ fn cmdPlan(allocator: Allocator, args: []const []const u8, stdout: anytype, stde
     var client_secret_override: ?[]const u8 = null;
     var scope_override: ?[]const u8 = null;
     var redirect_uri: []const u8 = "http://127.0.0.1:0/callback";
-    var resolve_plan = false;
+    var resolve_script = false;
 
     var i: usize = 3;
     while (i < args.len) : (i += 1) {
@@ -714,7 +1139,10 @@ fn cmdPlan(allocator: Allocator, args: []const []const u8, stdout: anytype, stde
             return error.MissingOptionValue;
         }
 
-        if (std.mem.eql(u8, arg, "--formula-json")) {
+        if (std.mem.eql(u8, arg, "--json-schema")) {
+            try stdout.print("{s}\n", .{formula_schema_v1});
+            return;
+        } else if (std.mem.eql(u8, arg, "--formula-json")) {
             formula_json_path = args[i + 1];
             i += 1;
         } else if (std.mem.eql(u8, arg, "--method")) {
@@ -733,7 +1161,7 @@ fn cmdPlan(allocator: Allocator, args: []const []const u8, stdout: anytype, stde
             redirect_uri = args[i + 1];
             i += 1;
         } else if (std.mem.eql(u8, arg, "--resolve")) {
-            resolve_plan = true;
+            resolve_script = true;
         } else {
             try stderr.print("Error: Unknown option '{s}'\n", .{arg});
             return error.UnknownOption;
@@ -789,17 +1217,19 @@ fn cmdPlan(allocator: Allocator, args: []const []const u8, stdout: anytype, stde
         selected_method = formula.methods[0];
     }
 
-    var resolved_steps: ?ResolvedPlanOwned = null;
+    var resolved_steps: ?ResolvedScript = null;
     defer if (resolved_steps) |*owned| owned.deinit();
 
-    var plan_data: ?InteractionPlan = null;
-    if (resolve_plan) {
+    var script_context: ?ScriptContext = null;
+    var script_method: ?formulas.Method = null;
+    var script_out: ?formulas.Script = null;
+    if (resolve_script) {
         const method = selected_method orelse {
-            try stderr.print("Error: --method is required to resolve a plan\n", .{});
+            try stderr.print("Error: --method is required to resolve a script\n", .{});
             return error.MissingArguments;
         };
 
-        resolved_steps = try resolveInteractionSteps(
+        resolved_steps = try resolveScriptSteps(
             allocator,
             formula,
             method,
@@ -808,19 +1238,25 @@ fn cmdPlan(allocator: Allocator, args: []const []const u8, stdout: anytype, stde
             scope_override,
             redirect_uri,
         );
-        plan_data = InteractionPlan{
-            .method = method,
+        script_context = resolved_steps.?.context;
+        script_method = method;
+        const register = if (formula.script) |script| script.register else null;
+        script_out = formulas.Script{
+            .register = register,
             .steps = resolved_steps.?.steps,
-            .context = resolved_steps.?.context,
         };
+    } else {
+        script_out = formula.script;
     }
 
-    const output = PlanOutput{
+    const output = ScriptOutput{
         .id = formula.id,
         .label = formula.label,
         .methods = methods,
-        .interaction = formula.interaction,
-        .plan = plan_data,
+        .script = script_out,
+        .storage = formula.storage,
+        .method = script_method,
+        .context = script_context,
     };
 
     var out = std.Io.Writer.Allocating.init(allocator);

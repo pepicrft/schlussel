@@ -1,4 +1,5 @@
 {
+  "schema": "v1",
   "id": "github",
   "label": "GitHub",
   "methods": ["device_code", "authorization_code"],
@@ -16,8 +17,8 @@
       "source": "https://github.com/cli/cli"
     }
   ],
-  "interaction": {
-    "auth_steps": [
+  "script": {
+    "steps": [
       { "type": "open_url", "value": "{verification_uri}" },
       { "type": "enter_code", "value": "{user_code}" },
       { "type": "wait_for_token" }

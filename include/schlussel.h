@@ -340,20 +340,20 @@ char* schlussel_last_error_message(void);
 void schlussel_clear_last_error(void);
 
 /* ============================================================================
- * Formula plan functions
+ * Formula script functions
  * ============================================================================ */
 
 /**
- * Emit a JSON interaction plan from a formula JSON document.
+ * Emit a JSON script from a formula JSON document.
  *
  * @param formula_json  Formula JSON (null-terminated)
  * @return              Newly allocated string on success, NULL on error
  *                      Must be freed with schlussel_string_free()
  */
-char* schlussel_plan_from_formula_json(const char* formula_json);
+char* schlussel_script_from_formula_json(const char* formula_json);
 
 /**
- * Emit a resolved JSON interaction plan from a formula JSON document.
+ * Emit a resolved JSON script from a formula JSON document.
  *
  * @param formula_json  Formula JSON (null-terminated)
  * @param method        Authentication method (e.g. "authorization_code")
@@ -364,7 +364,7 @@ char* schlussel_plan_from_formula_json(const char* formula_json);
  * @return              Newly allocated string on success, NULL on error
  *                      Must be freed with schlussel_string_free()
  */
-char* schlussel_plan_resolve_from_formula_json(
+char* schlussel_script_resolve_from_formula_json(
     const char* formula_json,
     const char* method,
     const char* client_id,
@@ -374,13 +374,13 @@ char* schlussel_plan_resolve_from_formula_json(
 );
 
 /**
- * Execute a resolved interaction plan using an existing client.
+ * Execute a resolved script using an existing client.
  *
  * @param client        OAuth client handle
- * @param plan_json     Resolved plan JSON (null-terminated)
+ * @param script_json   Resolved script JSON (null-terminated)
  * @return              Token handle on success, NULL on error
  */
-SchlusselToken* schlussel_run_plan(SchlusselClient* client, const char* plan_json);
+SchlusselToken* schlussel_run_script(SchlusselClient* client, const char* script_json);
 
 /* ============================================================================
  * Dynamic Client Registration functions

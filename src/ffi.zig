@@ -36,13 +36,7 @@ const ClientMetadata = registration.ClientMetadata;
 const ClientRegistrationResponse = registration.ClientRegistrationResponse;
 const DynamicRegistration = registration.DynamicRegistration;
 
-const InteractionPlan = struct {
-    method: formulas.Method,
-    steps: []const formulas.InteractionStep,
-    context: ?InteractionContext,
-};
-
-const InteractionContext = struct {
+const ScriptContext = struct {
     authorize_url: ?[]const u8 = null,
     pkce_verifier: ?[]const u8 = null,
     state: ?[]const u8 = null,
@@ -55,13 +49,13 @@ const InteractionContext = struct {
     expires_in: ?u64 = null,
 };
 
-const ResolvedPlan = struct {
+const ResolvedScript = struct {
     allocator: Allocator,
-    steps: []const formulas.InteractionStep,
-    context: InteractionContext,
+    steps: []const formulas.ScriptStep,
+    context: ScriptContext,
     allocations: std.ArrayListUnmanaged([]const u8),
 
-    fn deinit(self: *ResolvedPlan) void {
+    fn deinit(self: *ResolvedScript) void {
         for (self.allocations.items) |item| {
             self.allocator.free(item);
         }
@@ -70,12 +64,14 @@ const ResolvedPlan = struct {
     }
 };
 
-const PlanOutput = struct {
+const ScriptOutput = struct {
     id: []const u8,
     label: []const u8,
     methods: []const formulas.Method,
-    interaction: ?formulas.Interaction,
-    plan: ?InteractionPlan,
+    script: ?formulas.Script,
+    storage: ?formulas.StorageHints,
+    method: ?formulas.Method,
+    context: ?ScriptContext,
 };
 
 /// Allocator for FFI operations
@@ -119,6 +115,8 @@ fn errorCodeFromAny(err: anyerror) c_int {
         error.ConnectionFailed => error_types.toErrorCode(error.ConnectionFailed),
         error.Timeout => error_types.toErrorCode(error.Timeout),
         error.InsecureEndpoint => error_types.toErrorCode(error.ConfigurationError),
+        error.InvalidSchema => error_types.toErrorCode(error.ConfigurationError),
+        error.MissingEndpoint => error_types.toErrorCode(error.ConfigurationError),
         error.RegistrationFailed => error_types.toErrorCode(error.ServerError),
         else => 99, // SCHLUSSEL_ERROR_UNKNOWN
     };
@@ -662,12 +660,12 @@ export fn schlussel_string_free(str: ?[*:0]u8) void {
 }
 
 // ============================================================================
-// Formula plan operations
+// Formula script operations
 // ============================================================================
 
-/// Emit a JSON interaction plan from a formula JSON document.
+/// Emit a JSON script from a formula JSON document.
 /// Caller must free the returned string with schlussel_string_free.
-export fn schlussel_plan_from_formula_json(formula_json: [*c]const u8) ?[*:0]u8 {
+export fn schlussel_script_from_formula_json(formula_json: [*c]const u8) ?[*:0]u8 {
     clearLastError();
     if (formula_json == null) {
         setLastError(error.InvalidParameter);
@@ -681,17 +679,19 @@ export fn schlussel_plan_from_formula_json(formula_json: [*c]const u8) ?[*:0]u8 
     };
     defer owned.deinit();
 
-    const plan = PlanOutput{
+    const output = ScriptOutput{
         .id = owned.formula.id,
         .label = owned.formula.label,
         .methods = owned.formula.methods,
-        .interaction = owned.formula.interaction,
-        .plan = null,
+        .script = owned.formula.script,
+        .storage = owned.formula.storage,
+        .method = null,
+        .context = null,
     };
 
     var out = std.Io.Writer.Allocating.init(allocator);
     defer out.deinit();
-    std.json.Stringify.value(plan, .{ .whitespace = .indent_2 }, &out.writer) catch |err| {
+    std.json.Stringify.value(output, .{ .whitespace = .indent_2 }, &out.writer) catch |err| {
         setLastError(err);
         return null;
     };
@@ -699,9 +699,9 @@ export fn schlussel_plan_from_formula_json(formula_json: [*c]const u8) ?[*:0]u8 
     return dupeToC(out.written());
 }
 
-/// Emit a resolved JSON interaction plan from a formula JSON document.
+/// Emit a resolved JSON script from a formula JSON document.
 /// Caller must free the returned string with schlussel_string_free.
-export fn schlussel_plan_resolve_from_formula_json(
+export fn schlussel_script_resolve_from_formula_json(
     formula_json: [*c]const u8,
     method: [*c]const u8,
     client_id: [*c]const u8,
@@ -727,7 +727,7 @@ export fn schlussel_plan_resolve_from_formula_json(
         return null;
     };
 
-    var resolved = resolvePlanFromFormula(
+    var resolved = resolveScriptFromFormula(
         allocator,
         owned.asConst(),
         parsed_method,
@@ -741,21 +741,22 @@ export fn schlussel_plan_resolve_from_formula_json(
     };
     defer resolved.deinit();
 
-    const plan = PlanOutput{
+    const output = ScriptOutput{
         .id = owned.formula.id,
         .label = owned.formula.label,
         .methods = owned.formula.methods,
-        .interaction = owned.formula.interaction,
-        .plan = .{
-            .method = parsed_method,
+        .script = .{
+            .register = if (owned.formula.script) |script| script.register else null,
             .steps = resolved.steps,
-            .context = resolved.context,
         },
+        .storage = owned.formula.storage,
+        .method = parsed_method,
+        .context = resolved.context,
     };
 
     var out = std.Io.Writer.Allocating.init(allocator);
     defer out.deinit();
-    std.json.Stringify.value(plan, .{ .whitespace = .indent_2 }, &out.writer) catch |err| {
+    std.json.Stringify.value(output, .{ .whitespace = .indent_2 }, &out.writer) catch |err| {
         setLastError(err);
         return null;
     };
@@ -763,37 +764,42 @@ export fn schlussel_plan_resolve_from_formula_json(
     return dupeToC(out.written());
 }
 
-/// Execute a resolved plan using an existing client.
-export fn schlussel_run_plan(client: ?*SchlusselClient, plan_json: [*c]const u8) ?*SchlusselToken {
+/// Execute a resolved script using an existing client.
+export fn schlussel_run_script(client: ?*SchlusselClient, script_json: [*c]const u8) ?*SchlusselToken {
     clearLastError();
     const handle = client orelse {
         setLastError(error.InvalidParameter);
         return null;
     };
-    if (plan_json == null) {
+    if (script_json == null) {
         setLastError(error.InvalidParameter);
         return null;
     }
     const allocator = getAllocator();
 
-    const parsed = std.json.parseFromSlice(PlanOutput, allocator, std.mem.span(plan_json), .{ .allocate = .alloc_always }) catch |err| {
+    const parsed = std.json.parseFromSlice(ScriptOutput, allocator, std.mem.span(script_json), .{ .allocate = .alloc_always }) catch |err| {
         setLastError(err);
         return null;
     };
     defer parsed.deinit();
 
-    const plan = parsed.value.plan orelse {
+    const script = parsed.value.script orelse {
         setLastError(error.InvalidParameter);
         return null;
     };
-    const context = plan.context orelse {
+    _ = script;
+    const method = parsed.value.method orelse {
+        setLastError(error.InvalidParameter);
+        return null;
+    };
+    const context = parsed.value.context orelse {
         setLastError(error.InvalidParameter);
         return null;
     };
 
     var token: Token = undefined;
 
-    switch (plan.method) {
+    switch (method) {
         .device_code => {
             const device_code = context.device_code orelse {
                 setLastError(error.InvalidParameter);
@@ -861,6 +867,10 @@ export fn schlussel_run_plan(client: ?*SchlusselClient, plan_json: [*c]const u8)
                 setLastError(err);
                 return null;
             };
+        },
+        .api_key, .personal_access_token => {
+            setLastError(error.UnsupportedOperation);
+            return null;
         },
     }
 
@@ -961,14 +971,14 @@ fn expandTemplate(
     return buf.toOwnedSlice(allocator);
 }
 
-fn expandInteractionSteps(
+fn expandScriptSteps(
     allocator: Allocator,
-    steps: []const formulas.InteractionStep,
+    steps: []const formulas.ScriptStep,
     replacements: []const Replacement,
-    context: InteractionContext,
+    context: ScriptContext,
     allocations: *std.ArrayListUnmanaged([]const u8),
-) !ResolvedPlan {
-    const steps_out = try allocator.alloc(formulas.InteractionStep, steps.len);
+) !ResolvedScript {
+    const steps_out = try allocator.alloc(formulas.ScriptStep, steps.len);
     errdefer allocator.free(steps_out);
 
     for (steps, 0..) |step, idx| {
@@ -1001,7 +1011,7 @@ fn expandInteractionSteps(
     };
 }
 
-fn resolvePlanFromFormula(
+fn resolveScriptFromFormula(
     allocator: Allocator,
     formula: *const formulas.Formula,
     method: formulas.Method,
@@ -1009,25 +1019,30 @@ fn resolvePlanFromFormula(
     client_secret_override: ?[]const u8,
     scope_override: ?[]const u8,
     redirect_uri: []const u8,
-) !ResolvedPlan {
-    const default_device_steps = [_]formulas.InteractionStep{
+) !ResolvedScript {
+    const default_device_steps = [_]formulas.ScriptStep{
         .{ .@"type" = "open_url", .value = "{verification_uri}", .note = null },
         .{ .@"type" = "enter_code", .value = "{user_code}", .note = null },
         .{ .@"type" = "wait_for_token", .value = null, .note = null },
     };
-    const default_code_steps = [_]formulas.InteractionStep{
+    const default_code_steps = [_]formulas.ScriptStep{
         .{ .@"type" = "open_url", .value = "{authorize_url}", .note = null },
         .{ .@"type" = "wait_for_callback", .value = null, .note = null },
     };
+    const default_api_key_steps = [_]formulas.ScriptStep{
+        .{ .@"type" = "copy_key", .value = null, .note = "Paste your API key into the agent." },
+    };
 
-    const steps_source = if (formula.interaction) |interaction|
-        interaction.auth_steps orelse switch (method) {
+    const steps_source = if (formula.script) |script|
+        script.steps orelse switch (method) {
             .device_code => default_device_steps[0..],
             .authorization_code => default_code_steps[0..],
+            .api_key, .personal_access_token => default_api_key_steps[0..],
         }
     else switch (method) {
         .device_code => default_device_steps[0..],
         .authorization_code => default_code_steps[0..],
+        .api_key, .personal_access_token => default_api_key_steps[0..],
     };
 
     var replacements: std.ArrayListUnmanaged(Replacement) = .{};
@@ -1039,7 +1054,7 @@ fn resolvePlanFromFormula(
         allocations.deinit(allocator);
     }
 
-    var context = InteractionContext{};
+    var context = ScriptContext{};
 
     switch (method) {
         .authorization_code => {
@@ -1141,9 +1156,10 @@ fn resolvePlanFromFormula(
             context.interval = device_response.interval;
             context.expires_in = device_response.expires_in;
         },
+        .api_key, .personal_access_token => {},
     }
 
-    return expandInteractionSteps(allocator, steps_source, replacements.items, context, &allocations);
+    return expandScriptSteps(allocator, steps_source, replacements.items, context, &allocations);
 }
 
 fn freeStringSlice(allocator: Allocator, slice: []const []const u8) void {

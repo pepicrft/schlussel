@@ -302,12 +302,15 @@ pub fn configFromFormula(
         return error.MissingClientId;
     }
 
+    const authorization_endpoint = formula.authorization_endpoint orelse return error.MissingEndpoint;
+    const token_endpoint = formula.token_endpoint orelse return error.MissingEndpoint;
+
     return OAuthConfigOwned{
         .allocator = allocator,
         .client_id = try allocator.dupe(u8, client_id),
         .client_secret = if (client_secret) |s| try allocator.dupe(u8, s) else null,
-        .authorization_endpoint = try allocator.dupe(u8, formula.authorization_endpoint),
-        .token_endpoint = try allocator.dupe(u8, formula.token_endpoint),
+        .authorization_endpoint = try allocator.dupe(u8, authorization_endpoint),
+        .token_endpoint = try allocator.dupe(u8, token_endpoint),
         .redirect_uri = try allocator.dupe(u8, redirect_uri),
         .scope = if (scope_value) |s| try allocator.dupe(u8, s) else null,
         .device_authorization_endpoint = if (formula.device_authorization_endpoint) |e| try allocator.dupe(u8, e) else null,
@@ -1049,6 +1052,7 @@ test "configFromFormula: with public client without leaks" {
     // Create a test formula with public clients
     const json_formula =
         \\{
+        \\  "schema": "v1",
         \\  "id": "test-provider",
         \\  "label": "Test",
         \\  "methods": ["device_code"],
@@ -1089,6 +1093,7 @@ test "configFromFormula: with client_id override without leaks" {
 
     const json_formula =
         \\{
+        \\  "schema": "v1",
         \\  "id": "test",
         \\  "label": "Test",
         \\  "methods": ["device_code"],
@@ -1126,6 +1131,7 @@ test "configFromFormula: missing client_id returns error" {
 
     const json_formula =
         \\{
+        \\  "schema": "v1",
         \\  "id": "no-clients",
         \\  "label": "No Clients",
         \\  "methods": ["device_code"],

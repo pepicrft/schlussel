@@ -7,11 +7,15 @@ pub const Error = error{
     MissingField,
     InvalidField,
     InvalidMethod,
+    InvalidSchema,
+    MissingEndpoint,
 };
 
 pub const Method = enum {
     authorization_code,
     device_code,
+    api_key,
+    personal_access_token,
 
     pub fn jsonStringify(self: Method, writer: anytype) !void {
         try writer.write(@tagName(self));
@@ -21,23 +25,35 @@ pub const Method = enum {
 pub fn methodFromString(value: []const u8) ?Method {
     if (std.mem.eql(u8, value, "authorization_code")) return .authorization_code;
     if (std.mem.eql(u8, value, "device_code")) return .device_code;
+    if (std.mem.eql(u8, value, "api_key")) return .api_key;
+    if (std.mem.eql(u8, value, "personal_access_token")) return .personal_access_token;
     return null;
 }
 
-pub const InteractionRegister = struct {
+pub const ScriptRegister = struct {
     url: []const u8,
     steps: []const []const u8,
 };
 
-pub const InteractionStep = struct {
+pub const ScriptStep = struct {
     @"type": []const u8,
     value: ?[]const u8,
     note: ?[]const u8,
 };
 
-pub const Interaction = struct {
-    register: ?InteractionRegister,
-    auth_steps: ?[]const InteractionStep,
+pub const Script = struct {
+    register: ?ScriptRegister,
+    steps: ?[]const ScriptStep,
+};
+
+pub const StorageHints = struct {
+    key_template: ?[]const u8,
+    label: ?[]const u8,
+    value_label: ?[]const u8,
+    identity_label: ?[]const u8,
+    identity_hint: ?[]const u8,
+    rotation_url: ?[]const u8,
+    rotation_hint: ?[]const u8,
 };
 
 pub const PublicClient = struct {
@@ -61,15 +77,17 @@ pub const Quirks = struct {
 };
 
 pub const Formula = struct {
+    schema: []const u8,
     id: []const u8,
     label: []const u8,
     methods: []const Method,
-    authorization_endpoint: []const u8,
-    token_endpoint: []const u8,
+    authorization_endpoint: ?[]const u8,
+    token_endpoint: ?[]const u8,
     device_authorization_endpoint: ?[]const u8,
     scope: ?[]const u8,
+    storage: ?StorageHints,
     public_clients: ?[]const PublicClient,
-    interaction: ?Interaction,
+    script: ?Script,
     quirks: ?Quirks,
 
     /// Get the default public client (first one in the list)
@@ -135,7 +153,7 @@ pub const FormulaOwned = struct {
     formula: Formula,
     methods_alloc: ?[]const Method,
     register_steps_alloc: ?[]const []const u8,
-    interaction_steps_alloc: ?[]const InteractionStep,
+    script_steps_alloc: ?[]const ScriptStep,
     extra_fields_alloc: ?[]const []const u8,
     public_clients_alloc: ?[]const PublicClient,
     parsed: json.Parsed(json.Value),
@@ -143,7 +161,7 @@ pub const FormulaOwned = struct {
     pub fn deinit(self: *FormulaOwned) void {
         if (self.methods_alloc) |arr| self.allocator.free(arr);
         if (self.register_steps_alloc) |arr| self.allocator.free(arr);
-        if (self.interaction_steps_alloc) |arr| self.allocator.free(arr);
+        if (self.script_steps_alloc) |arr| self.allocator.free(arr);
         if (self.extra_fields_alloc) |arr| self.allocator.free(arr);
         if (self.public_clients_alloc) |arr| {
             for (arr) |client| {
@@ -253,13 +271,13 @@ fn parsePublicClients(allocator: Allocator, value: json.Value) ![]const PublicCl
     return slice;
 }
 
-fn parseInteractionSteps(allocator: Allocator, value: json.Value) ![]const InteractionStep {
+fn parseScriptSteps(allocator: Allocator, value: json.Value) ![]const ScriptStep {
     const arr = switch (value) {
         .array => |a| a,
         else => return Error.InvalidField,
     };
 
-    var slice = try allocator.alloc(InteractionStep, arr.items.len);
+    var slice = try allocator.alloc(ScriptStep, arr.items.len);
     errdefer allocator.free(slice);
 
     for (arr.items, 0..) |item, idx| {
@@ -268,7 +286,7 @@ fn parseInteractionSteps(allocator: Allocator, value: json.Value) ![]const Inter
             else => return Error.InvalidField,
         };
 
-        slice[idx] = InteractionStep{
+        slice[idx] = ScriptStep{
             .@"type" = try expectString(obj.get("type") orelse return Error.MissingField),
             .value = try optionalString(obj.get("value")),
             .note = try optionalString(obj.get("note")),
@@ -287,59 +305,96 @@ pub fn loadFromJsonSlice(allocator: Allocator, slice: []const u8) !FormulaOwned 
         else => return Error.InvalidRootDocument,
     };
 
+    const schema = try expectString(root.get("schema") orelse return Error.MissingField);
+    if (!std.mem.eql(u8, schema, "v1")) return Error.InvalidSchema;
+
     const id = try expectString(root.get("id") orelse return Error.MissingField);
     const label = try expectString(root.get("label") orelse return Error.MissingField);
-
-    const endpoints_value = root.get("endpoints") orelse return Error.MissingField;
-    const endpoint_obj = switch (endpoints_value) {
-        .object => |o| o,
-        else => return Error.InvalidField,
-    };
-
-    const authorization_endpoint = try expectString(endpoint_obj.get("authorize") orelse return Error.MissingField);
-    const token_endpoint = try expectString(endpoint_obj.get("token") orelse return Error.MissingField);
-    const device_authorization_endpoint = try optionalString(endpoint_obj.get("device"));
 
     const methods_value = root.get("methods") orelse return Error.MissingField;
     const methods = try parseMethods(allocator, methods_value);
     errdefer allocator.free(methods);
 
-    var interaction: ?Interaction = null;
-    var register_steps: ?[]const []const u8 = null;
-    var interaction_steps: ?[]const InteractionStep = null;
-    if (root.get("interaction")) |interaction_value| {
-        const interaction_obj = switch (interaction_value) {
+    var authorization_endpoint: ?[]const u8 = null;
+    var token_endpoint: ?[]const u8 = null;
+    var device_authorization_endpoint: ?[]const u8 = null;
+
+    if (root.get("endpoints")) |endpoints_value| {
+        const endpoint_obj = switch (endpoints_value) {
             .object => |o| o,
             else => return Error.InvalidField,
         };
 
-        var register: ?InteractionRegister = null;
-        if (interaction_obj.get("register")) |register_value| {
+        authorization_endpoint = try optionalString(endpoint_obj.get("authorize"));
+        token_endpoint = try optionalString(endpoint_obj.get("token"));
+        device_authorization_endpoint = try optionalString(endpoint_obj.get("device"));
+    }
+
+    var needs_oauth_endpoints = false;
+    for (methods) |method| {
+        if (method == .authorization_code or method == .device_code) {
+            needs_oauth_endpoints = true;
+            break;
+        }
+    }
+    if (needs_oauth_endpoints and (authorization_endpoint == null or token_endpoint == null)) {
+        return Error.MissingEndpoint;
+    }
+
+    var script: ?Script = null;
+    var register_steps: ?[]const []const u8 = null;
+    var script_steps: ?[]const ScriptStep = null;
+    if (root.get("script")) |script_value| {
+        const script_obj = switch (script_value) {
+            .object => |o| o,
+            else => return Error.InvalidField,
+        };
+
+        var register: ?ScriptRegister = null;
+        if (script_obj.get("register")) |register_value| {
             const register_obj = switch (register_value) {
                 .object => |o| o,
                 else => return Error.InvalidField,
             };
             const register_url = try expectString(register_obj.get("url") orelse return Error.MissingField);
             register_steps = try parseStringArray(allocator, register_obj.get("steps") orelse return Error.MissingField);
-            register = InteractionRegister{
+            register = ScriptRegister{
                 .url = register_url,
                 .steps = register_steps.?,
             };
         }
 
-        if (interaction_obj.get("auth_steps")) |steps_value| {
-            interaction_steps = try parseInteractionSteps(allocator, steps_value);
+        if (script_obj.get("steps")) |steps_value| {
+            script_steps = try parseScriptSteps(allocator, steps_value);
         }
 
-        interaction = Interaction{
+        script = Script{
             .register = register,
-            .auth_steps = interaction_steps,
+            .steps = script_steps,
         };
     }
     errdefer if (register_steps) |s| allocator.free(s);
-    errdefer if (interaction_steps) |s| allocator.free(s);
+    errdefer if (script_steps) |s| allocator.free(s);
 
     const scope = try optionalString(root.get("scope"));
+
+    var storage: ?StorageHints = null;
+    if (root.get("storage")) |storage_value| {
+        const storage_obj = switch (storage_value) {
+            .object => |o| o,
+            else => return Error.InvalidField,
+        };
+
+        storage = StorageHints{
+            .key_template = try optionalString(storage_obj.get("key_template")),
+            .label = try optionalString(storage_obj.get("label")),
+            .value_label = try optionalString(storage_obj.get("value_label")),
+            .identity_label = try optionalString(storage_obj.get("identity_label")),
+            .identity_hint = try optionalString(storage_obj.get("identity_hint")),
+            .rotation_url = try optionalString(storage_obj.get("rotation_url")),
+            .rotation_hint = try optionalString(storage_obj.get("rotation_hint")),
+        };
+    }
 
     var public_clients: ?[]const PublicClient = null;
     if (root.get("public_clients")) |clients_value| {
@@ -374,6 +429,7 @@ pub fn loadFromJsonSlice(allocator: Allocator, slice: []const u8) !FormulaOwned 
     return FormulaOwned{
         .allocator = allocator,
         .formula = Formula{
+            .schema = schema,
             .id = id,
             .label = label,
             .methods = methods,
@@ -381,13 +437,14 @@ pub fn loadFromJsonSlice(allocator: Allocator, slice: []const u8) !FormulaOwned 
             .token_endpoint = token_endpoint,
             .device_authorization_endpoint = device_authorization_endpoint,
             .scope = scope,
+            .storage = storage,
             .public_clients = public_clients,
-            .interaction = interaction,
+            .script = script,
             .quirks = quirks,
         },
         .methods_alloc = methods,
         .register_steps_alloc = register_steps,
-        .interaction_steps_alloc = interaction_steps,
+        .script_steps_alloc = script_steps,
         .extra_fields_alloc = if (quirks) |q| q.extra_response_fields else null,
         .public_clients_alloc = public_clients,
         .parsed = parsed,
@@ -413,6 +470,7 @@ test "FormulaOwned: parse minimal formula without leaks" {
 
     const minimal_json =
         \\{
+        \\  "schema": "v1",
         \\  "id": "test",
         \\  "label": "Test Provider",
         \\  "methods": ["device_code"],
@@ -426,6 +484,7 @@ test "FormulaOwned: parse minimal formula without leaks" {
     var owned = try loadFromJsonSlice(allocator, minimal_json);
     defer owned.deinit();
 
+    try std.testing.expectEqualStrings("v1", owned.formula.schema);
     try std.testing.expectEqualStrings("test", owned.formula.id);
     try std.testing.expectEqualStrings("Test Provider", owned.formula.label);
     try std.testing.expectEqual(@as(usize, 1), owned.formula.methods.len);
@@ -437,6 +496,7 @@ test "FormulaOwned: parse formula with public_clients without leaks" {
 
     const json_with_clients =
         \\{
+        \\  "schema": "v1",
         \\  "id": "github",
         \\  "label": "GitHub",
         \\  "methods": ["device_code", "authorization_code"],
@@ -466,6 +526,7 @@ test "FormulaOwned: parse formula with public_clients without leaks" {
     var owned = try loadFromJsonSlice(allocator, json_with_clients);
     defer owned.deinit();
 
+    try std.testing.expectEqualStrings("v1", owned.formula.schema);
     try std.testing.expectEqualStrings("github", owned.formula.id);
     try std.testing.expectEqual(@as(usize, 2), owned.formula.methods.len);
     try std.testing.expect(owned.formula.public_clients != null);
@@ -495,11 +556,12 @@ test "FormulaOwned: parse formula with public_clients without leaks" {
     try std.testing.expect(not_found == null);
 }
 
-test "FormulaOwned: parse formula with interaction register without leaks" {
+test "FormulaOwned: parse formula with script register without leaks" {
     const allocator = std.testing.allocator;
 
-    const json_with_interaction =
+    const json_with_script =
         \\{
+        \\  "schema": "v1",
         \\  "id": "custom",
         \\  "label": "Custom Provider",
         \\  "methods": ["authorization_code"],
@@ -507,7 +569,7 @@ test "FormulaOwned: parse formula with interaction register without leaks" {
         \\    "authorize": "https://custom.com/authorize",
         \\    "token": "https://custom.com/token"
         \\  },
-        \\  "interaction": {
+        \\  "script": {
         \\    "register": {
         \\      "url": "https://custom.com/register",
         \\      "steps": [
@@ -516,7 +578,7 @@ test "FormulaOwned: parse formula with interaction register without leaks" {
         \\        "Copy the client ID"
         \\      ]
         \\    },
-        \\    "auth_steps": [
+        \\    "steps": [
         \\      { "type": "open_url", "value": "{authorize_url}" },
         \\      { "type": "wait_for_callback" }
         \\    ]
@@ -524,15 +586,16 @@ test "FormulaOwned: parse formula with interaction register without leaks" {
         \\}
     ;
 
-    var owned = try loadFromJsonSlice(allocator, json_with_interaction);
+    var owned = try loadFromJsonSlice(allocator, json_with_script);
     defer owned.deinit();
 
-    try std.testing.expect(owned.formula.interaction != null);
-    try std.testing.expect(owned.formula.interaction.?.register != null);
-    try std.testing.expectEqualStrings("https://custom.com/register", owned.formula.interaction.?.register.?.url);
-    try std.testing.expectEqual(@as(usize, 3), owned.formula.interaction.?.register.?.steps.len);
-    try std.testing.expect(owned.formula.interaction.?.auth_steps != null);
-    try std.testing.expectEqual(@as(usize, 2), owned.formula.interaction.?.auth_steps.?.len);
+    try std.testing.expectEqualStrings("v1", owned.formula.schema);
+    try std.testing.expect(owned.formula.script != null);
+    try std.testing.expect(owned.formula.script.?.register != null);
+    try std.testing.expectEqualStrings("https://custom.com/register", owned.formula.script.?.register.?.url);
+    try std.testing.expectEqual(@as(usize, 3), owned.formula.script.?.register.?.steps.len);
+    try std.testing.expect(owned.formula.script.?.steps != null);
+    try std.testing.expectEqual(@as(usize, 2), owned.formula.script.?.steps.?.len);
 }
 
 test "FormulaOwned: parse formula with quirks without leaks" {
@@ -540,6 +603,7 @@ test "FormulaOwned: parse formula with quirks without leaks" {
 
     const json_with_quirks =
         \\{
+        \\  "schema": "v1",
         \\  "id": "quirky",
         \\  "label": "Quirky Provider",
         \\  "methods": ["device_code"],
@@ -560,6 +624,7 @@ test "FormulaOwned: parse formula with quirks without leaks" {
     var owned = try loadFromJsonSlice(allocator, json_with_quirks);
     defer owned.deinit();
 
+    try std.testing.expectEqualStrings("v1", owned.formula.schema);
     try std.testing.expect(owned.formula.quirks != null);
     const quirks = owned.formula.quirks.?;
     try std.testing.expectEqualStrings("https://quirky.com/register", quirks.dynamic_registration_endpoint.?);
@@ -573,6 +638,7 @@ test "FormulaOwned: parse full formula with all fields without leaks" {
 
     const full_json =
         \\{
+        \\  "schema": "v1",
         \\  "id": "full",
         \\  "label": "Full Provider",
         \\  "methods": ["device_code", "authorization_code"],
@@ -585,12 +651,12 @@ test "FormulaOwned: parse full formula with all fields without leaks" {
         \\  "public_clients": [
         \\    {"name": "cli", "id": "id1", "secret": "secret1", "source": "https://source.com"}
         \\  ],
-        \\  "interaction": {
+        \\  "script": {
         \\    "register": {
         \\      "url": "https://full.com/register",
         \\      "steps": ["Step 1", "Step 2"]
         \\    },
-        \\    "auth_steps": [
+        \\    "steps": [
         \\      { "type": "open_url", "value": "{authorize_url}" },
         \\      { "type": "wait_for_callback" }
         \\    ]
@@ -598,6 +664,15 @@ test "FormulaOwned: parse full formula with all fields without leaks" {
         \\  "quirks": {
         \\    "dynamic_registration_endpoint": "https://full.com/dyn",
         \\    "extra_response_fields": ["field1"]
+        \\  },
+        \\  "storage": {
+        \\    "key_template": "{formula_id}:{method}",
+        \\    "label": "Full Provider",
+        \\    "value_label": "Access token",
+        \\    "identity_label": "Workspace",
+        \\    "identity_hint": "Use the org slug",
+        \\    "rotation_url": "https://full.com/settings/tokens",
+        \\    "rotation_hint": "Rotate every 90 days"
         \\  }
         \\}
     ;
@@ -605,12 +680,48 @@ test "FormulaOwned: parse full formula with all fields without leaks" {
     var owned = try loadFromJsonSlice(allocator, full_json);
     defer owned.deinit();
 
+    try std.testing.expectEqualStrings("v1", owned.formula.schema);
     try std.testing.expectEqualStrings("full", owned.formula.id);
     try std.testing.expectEqualStrings("read write admin", owned.formula.scope.?);
     try std.testing.expect(owned.formula.public_clients != null);
-    try std.testing.expect(owned.formula.interaction != null);
+    try std.testing.expect(owned.formula.script != null);
     try std.testing.expect(owned.formula.quirks != null);
+    try std.testing.expect(owned.formula.storage != null);
     try std.testing.expectEqualStrings("https://full.com/device", owned.formula.device_authorization_endpoint.?);
+    const storage = owned.formula.storage.?;
+    try std.testing.expectEqualStrings("{formula_id}:{method}", storage.key_template.?);
+    try std.testing.expectEqualStrings("Full Provider", storage.label.?);
+    try std.testing.expectEqualStrings("Access token", storage.value_label.?);
+    try std.testing.expectEqualStrings("Workspace", storage.identity_label.?);
+    try std.testing.expectEqualStrings("Use the org slug", storage.identity_hint.?);
+}
+
+test "FormulaOwned: parse api key formula without endpoints" {
+    const allocator = std.testing.allocator;
+
+    const api_key_json =
+        \\{
+        \\  "schema": "v1",
+        \\  "id": "acme",
+        \\  "label": "Acme API",
+        \\  "methods": ["api_key"],
+        \\  "script": {
+        \\    "steps": [
+        \\      { "type": "copy_key", "note": "Paste your API key into the agent." }
+        \\    ]
+        \\  }
+        \\}
+    ;
+
+    var owned = try loadFromJsonSlice(allocator, api_key_json);
+    defer owned.deinit();
+
+    try std.testing.expectEqualStrings("v1", owned.formula.schema);
+    try std.testing.expectEqualStrings("acme", owned.formula.id);
+    try std.testing.expectEqual(@as(usize, 1), owned.formula.methods.len);
+    try std.testing.expectEqual(Method.api_key, owned.formula.methods[0]);
+    try std.testing.expect(owned.formula.authorization_endpoint == null);
+    try std.testing.expect(owned.formula.token_endpoint == null);
 }
 
 test "FormulaOwned: error handling does not leak on invalid JSON" {
@@ -623,6 +734,7 @@ test "FormulaOwned: error handling does not leak on invalid JSON" {
     // Missing required field
     const missing_id =
         \\{
+        \\  "schema": "v1",
         \\  "label": "Test",
         \\  "methods": ["device_code"],
         \\  "endpoints": {"authorize": "https://x.com/a", "token": "https://x.com/t"}
@@ -634,6 +746,7 @@ test "FormulaOwned: error handling does not leak on invalid JSON" {
     // Invalid method type
     const invalid_flow =
         \\{
+        \\  "schema": "v1",
         \\  "id": "test",
         \\  "label": "Test",
         \\  "methods": ["invalid_method"],
@@ -642,6 +755,18 @@ test "FormulaOwned: error handling does not leak on invalid JSON" {
     ;
     const result3 = loadFromJsonSlice(allocator, invalid_flow);
     try std.testing.expectError(Error.InvalidMethod, result3);
+
+    const invalid_schema =
+        \\{
+        \\  "schema": "v2",
+        \\  "id": "test",
+        \\  "label": "Test",
+        \\  "methods": ["device_code"],
+        \\  "endpoints": {"authorize": "https://x.com/a", "token": "https://x.com/t"}
+        \\}
+    ;
+    const result_schema = loadFromJsonSlice(allocator, invalid_schema);
+    try std.testing.expectError(Error.InvalidSchema, result_schema);
 
     // Not an object
     const result4 = loadFromJsonSlice(allocator, "[]");
@@ -681,10 +806,11 @@ test "builtin formulas: codex and claude formulas load correctly" {
     // Test Codex formula
     const codex = try findById(allocator, "codex");
     try std.testing.expect(codex != null);
+    try std.testing.expectEqualStrings("v1", codex.?.schema);
     try std.testing.expectEqualStrings("codex", codex.?.id);
     try std.testing.expectEqualStrings("OpenAI Codex", codex.?.label);
-    try std.testing.expectEqualStrings("https://auth.openai.com/oauth/authorize", codex.?.authorization_endpoint);
-    try std.testing.expectEqualStrings("https://auth.openai.com/oauth/token", codex.?.token_endpoint);
+    try std.testing.expectEqualStrings("https://auth.openai.com/oauth/authorize", codex.?.authorization_endpoint.?);
+    try std.testing.expectEqualStrings("https://auth.openai.com/oauth/token", codex.?.token_endpoint.?);
     try std.testing.expect(codex.?.public_clients != null);
     try std.testing.expect(codex.?.public_clients.?.len == 1);
     try std.testing.expectEqualStrings("codex-cli", codex.?.public_clients.?[0].name);
@@ -693,10 +819,11 @@ test "builtin formulas: codex and claude formulas load correctly" {
     // Test Claude formula
     const claude = try findById(allocator, "claude");
     try std.testing.expect(claude != null);
+    try std.testing.expectEqualStrings("v1", claude.?.schema);
     try std.testing.expectEqualStrings("claude", claude.?.id);
     try std.testing.expectEqualStrings("Claude Code (Anthropic)", claude.?.label);
-    try std.testing.expectEqualStrings("https://console.anthropic.com/oauth/authorize", claude.?.authorization_endpoint);
-    try std.testing.expectEqualStrings("https://console.anthropic.com/v1/oauth/token", claude.?.token_endpoint);
+    try std.testing.expectEqualStrings("https://console.anthropic.com/oauth/authorize", claude.?.authorization_endpoint.?);
+    try std.testing.expectEqualStrings("https://console.anthropic.com/v1/oauth/token", claude.?.token_endpoint.?);
     try std.testing.expect(claude.?.public_clients != null);
     try std.testing.expect(claude.?.public_clients.?.len == 1);
     try std.testing.expectEqualStrings("claude-code", claude.?.public_clients.?[0].name);
@@ -709,6 +836,8 @@ test "builtin formulas: codex and claude formulas load correctly" {
 test "methodFromString: returns correct methods" {
     try std.testing.expectEqual(Method.authorization_code, methodFromString("authorization_code").?);
     try std.testing.expectEqual(Method.device_code, methodFromString("device_code").?);
+    try std.testing.expectEqual(Method.api_key, methodFromString("api_key").?);
+    try std.testing.expectEqual(Method.personal_access_token, methodFromString("personal_access_token").?);
     try std.testing.expect(methodFromString("invalid") == null);
     try std.testing.expect(methodFromString("") == null);
 }

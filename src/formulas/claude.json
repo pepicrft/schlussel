@@ -1,4 +1,5 @@
 {
+  "schema": "v1",
   "id": "claude",
   "label": "Claude Code (Anthropic)",
   "methods": ["authorization_code"],
@@ -15,7 +16,7 @@
       "methods": ["authorization_code"]
     }
   ],
-  "interaction": {
+  "script": {
     "register": {
       "url": "https://console.anthropic.com",
       "steps": [
@@ -23,7 +24,7 @@
         "A Claude Pro, Max, Team, or Enterprise subscription is required for Claude Code access"
       ]
     },
-    "auth_steps": [
+    "steps": [
       { "type": "open_url", "value": "{authorize_url}" },
       { "type": "wait_for_callback" }
     ]

@@ -13,10 +13,10 @@ OAuth authentication made simple for command-line tools. No more copying tokens 
 - Authorization Code Flow with PKCE
 - Automatic browser handling
 
-**Interaction Plans**
+**Scripts and Runbooks**
 - Structured steps agents can render
-- Resolved plan context for device codes and callbacks
-- Execute plans via CLI or FFI
+- Resolved script context for device codes and callbacks
+- Execute resolved scripts via CLI or FFI
 
 **Secure by Default**
 - OS credential manager integration (Keychain/Credential Manager)
@@ -80,14 +80,15 @@ pub fn main() !void {
 }
 ```
 
-### Generate and Run a Plan
+### Generate and Run a Script
 
 ```bash
-# Create a resolved plan for device code
-schlussel plan github --method device_code --resolve > plan.json
+# Resolve and run in one command
+schlussel run github --method device_code
 
-# Execute the plan and store the token
-schlussel run github --plan-json plan.json
+# Or execute a resolved script
+schlussel script github --method device_code --resolve > script.json
+schlussel run --script-json script.json
 ```
 
 ---
@@ -167,7 +168,7 @@ Check out [examples/](examples/) for working code:
 ## Documentation
 
 - [Formula schema](docs/formula.md)
-- [Interaction plans](docs/plan.md)
+- [Scripts](docs/plan.md)
 
 ---
 
