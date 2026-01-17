@@ -1,0 +1,47 @@
+{
+  "schema": "v2",
+  "id": "azure",
+  "label": "Microsoft Azure",
+  "description": "Authenticate with Microsoft Azure using OAuth device code flow. Access Azure Resource Manager, Microsoft Graph, and other Azure APIs.",
+  "apis": {
+    "rest": {
+      "base_url": "https://graph.microsoft.com/v1.0",
+      "auth_header": "Authorization: Bearer {token}",
+      "docs_url": "https://learn.microsoft.com/en-us/graph/api/overview",
+      "example_endpoint": "/me",
+      "methods": ["device_code"]
+    },
+    "arm": {
+      "base_url": "https://management.azure.com",
+      "auth_header": "Authorization: Bearer {token}",
+      "docs_url": "https://learn.microsoft.com/en-us/rest/api/azure/",
+      "methods": ["device_code"]
+    }
+  },
+  "clients": [
+    {
+      "name": "azure-cli",
+      "id": "04b07795-8ddb-461a-bbee-02f9e1bf7b46",
+      "source": "https://github.com/Azure/azure-cli",
+      "methods": ["device_code"]
+    }
+  ],
+  "identity": {
+    "label": "Tenant",
+    "hint": "e.g., common, organizations, or tenant ID"
+  },
+  "methods": {
+    "device_code": {
+      "endpoints": {
+        "device": "https://login.microsoftonline.com/{identity}/oauth2/v2.0/devicecode",
+        "token": "https://login.microsoftonline.com/{identity}/oauth2/v2.0/token"
+      },
+      "scope": "https://graph.microsoft.com/.default offline_access",
+      "script": [
+        { "type": "open_url", "value": "{verification_uri}" },
+        { "type": "enter_code", "value": "{user_code}" },
+        { "type": "wait_for_token" }
+      ]
+    }
+  }
+}

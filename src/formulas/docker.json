@@ -1,0 +1,50 @@
+{
+  "schema": "v2",
+  "id": "docker",
+  "label": "Docker Hub",
+  "description": "Authenticate with Docker Hub using OAuth device code flow. Access Docker Hub Registry API for managing repositories, images, and organizations.",
+  "apis": {
+    "rest": {
+      "base_url": "https://hub.docker.com/v2",
+      "auth_header": "Authorization: Bearer {token}",
+      "docs_url": "https://docs.docker.com/docker-hub/api/latest/",
+      "example_endpoint": "/user",
+      "methods": ["device_code"]
+    },
+    "registry": {
+      "base_url": "https://registry-1.docker.io/v2",
+      "auth_header": "Authorization: Bearer {token}",
+      "docs_url": "https://docs.docker.com/registry/spec/api/",
+      "methods": ["device_code"]
+    }
+  },
+  "clients": [
+    {
+      "name": "docker-cli",
+      "id": "L4v0dmlNBpYUjGGab0C2JtgTgXr1Qz4d",
+      "source": "https://github.com/docker/cli",
+      "methods": ["device_code"]
+    }
+  ],
+  "identity": {
+    "label": "Account",
+    "hint": "e.g., personal, work"
+  },
+  "methods": {
+    "device_code": {
+      "endpoints": {
+        "device": "https://login.docker.com/oauth/device/code",
+        "token": "https://login.docker.com/oauth/token"
+      },
+      "scope": "openid offline_access",
+      "extra_params": {
+        "audience": "https://hub.docker.com"
+      },
+      "script": [
+        { "type": "open_url", "value": "{verification_uri}" },
+        { "type": "enter_code", "value": "{user_code}" },
+        { "type": "wait_for_token" }
+      ]
+    }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "schema": "v2",
+  "id": "vercel",
+  "label": "Vercel",
+  "description": "Authenticate with Vercel using OAuth device code flow. Access Vercel API for managing deployments, projects, domains, and team settings.",
+  "apis": {
+    "rest": {
+      "base_url": "https://api.vercel.com",
+      "auth_header": "Authorization: Bearer {token}",
+      "docs_url": "https://vercel.com/docs/rest-api",
+      "example_endpoint": "/v2/user",
+      "methods": ["device_code"]
+    }
+  },
+  "clients": [
+    {
+      "name": "vercel-cli",
+      "id": "cl_HYyOPBNtFMfHhaUn9L4QPfTZz6TP47bp",
+      "source": "https://github.com/vercel/vercel",
+      "methods": ["device_code"]
+    }
+  ],
+  "identity": {
+    "label": "Account",
+    "hint": "e.g., personal, team-name"
+  },
+  "methods": {
+    "device_code": {
+      "endpoints": {
+        "device": "https://api.vercel.com/login/oauth/device-authorization",
+        "token": "https://api.vercel.com/login/oauth/token"
+      },
+      "scope": "openid offline_access",
+      "script": [
+        { "type": "open_url", "value": "{verification_uri}" },
+        { "type": "enter_code", "value": "{user_code}" },
+        { "type": "wait_for_token" }
+      ]
+    }
+  }
+}
