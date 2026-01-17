@@ -1,27 +1,73 @@
 {
-  "schema": "v1",
+  "schema": "v2",
   "id": "github",
   "label": "GitHub",
-  "methods": ["device_code", "authorization_code"],
-  "endpoints": {
-    "authorize": "https://github.com/login/oauth/authorize",
-    "token": "https://github.com/login/oauth/access_token",
-    "device": "https://github.com/login/device/code"
+  "description": "Authenticate with GitHub using OAuth device code flow, authorization code, or personal access tokens. Access both REST and GraphQL APIs for repositories, organizations, and gists.",
+  "apis": {
+    "rest": {
+      "base_url": "https://api.github.com",
+      "auth_header": "Authorization: Bearer {token}",
+      "docs_url": "https://docs.github.com/en/rest",
+      "spec_url": "https://raw.githubusercontent.com/github/rest-api-description/main/descriptions/api.github.com/api.github.com.json",
+      "spec_type": "openapi"
+    },
+    "graphql": {
+      "base_url": "https://api.github.com/graphql",
+      "auth_header": "Authorization: Bearer {token}",
+      "docs_url": "https://docs.github.com/en/graphql",
+      "spec_url": "https://api.github.com/graphql",
+      "spec_type": "graphql"
+    }
   },
-  "scope": "repo read:org gist",
-  "public_clients": [
+  "clients": [
     {
       "name": "gh-cli",
       "id": "178c6fc778ccc68e1d6a",
       "secret": "34ddeff2b558a23d38fba8a6de74f086ede1cc0b",
-      "source": "https://github.com/cli/cli"
+      "source": "https://github.com/cli/cli",
+      "methods": ["device_code", "authorization_code"]
     }
   ],
-  "script": {
-    "steps": [
-      { "type": "open_url", "value": "{verification_uri}" },
-      { "type": "enter_code", "value": "{user_code}" },
-      { "type": "wait_for_token" }
-    ]
+  "identity": {
+    "label": "Account",
+    "hint": "e.g., personal, work"
+  },
+  "methods": {
+    "device_code": {
+      "endpoints": {
+        "device": "https://github.com/login/device/code",
+        "token": "https://github.com/login/oauth/access_token"
+      },
+      "scope": "repo read:org gist",
+      "script": [
+        { "type": "open_url", "value": "{verification_uri}" },
+        { "type": "enter_code", "value": "{user_code}" },
+        { "type": "wait_for_token" }
+      ]
+    },
+    "authorization_code": {
+      "endpoints": {
+        "authorize": "https://github.com/login/oauth/authorize",
+        "token": "https://github.com/login/oauth/access_token"
+      },
+      "scope": "repo read:org gist",
+      "script": [
+        { "type": "open_url", "value": "{authorize_url}" },
+        { "type": "wait_for_callback" }
+      ]
+    },
+    "personal_access_token": {
+      "register": {
+        "url": "https://github.com/settings/tokens/new",
+        "steps": [
+          "Go to Settings > Developer settings > Personal access tokens",
+          "Generate a new token with required scopes",
+          "Copy the token"
+        ]
+      },
+      "script": [
+        { "type": "copy_key", "note": "Paste your GitHub personal access token" }
+      ]
+    }
   }
 }

@@ -1,14 +1,19 @@
 {
-  "schema": "v1",
+  "schema": "v2",
   "id": "codex",
   "label": "OpenAI Codex",
-  "methods": ["authorization_code"],
-  "endpoints": {
-    "authorize": "https://auth.openai.com/oauth/authorize",
-    "token": "https://auth.openai.com/oauth/token"
+  "description": "Authenticate with OpenAI's API using OAuth authorization code flow. Access GPT models and Codex for code generation and completion tasks.",
+  "apis": {
+    "rest": {
+      "base_url": "https://api.openai.com/v1",
+      "auth_header": "Authorization: Bearer {token}",
+      "docs_url": "https://platform.openai.com/docs/api-reference",
+      "spec_url": "https://raw.githubusercontent.com/openai/openai-openapi/master/openapi.yaml",
+      "spec_type": "openapi",
+      "methods": ["authorization_code"]
+    }
   },
-  "scope": "openid profile email offline_access",
-  "public_clients": [
+  "clients": [
     {
       "name": "codex-cli",
       "id": "app_EMoamEEZ73f0CkXaXp7hrann",
@@ -16,17 +21,24 @@
       "methods": ["authorization_code"]
     }
   ],
-  "script": {
-    "register": {
-      "url": "https://chatgpt.com",
-      "steps": [
-        "Sign up for a ChatGPT account at https://chatgpt.com if you don't have one",
-        "A ChatGPT Plus, Pro, or Team subscription is required for Codex CLI access"
+  "methods": {
+    "authorization_code": {
+      "endpoints": {
+        "authorize": "https://auth.openai.com/oauth/authorize",
+        "token": "https://auth.openai.com/oauth/token"
+      },
+      "scope": "openid profile email offline_access",
+      "register": {
+        "url": "https://chatgpt.com",
+        "steps": [
+          "Sign up for a ChatGPT account at https://chatgpt.com if you don't have one",
+          "A ChatGPT Plus, Pro, or Team subscription is required for Codex CLI access"
+        ]
+      },
+      "script": [
+        { "type": "open_url", "value": "{authorize_url}" },
+        { "type": "wait_for_callback" }
       ]
-    },
-    "steps": [
-      { "type": "open_url", "value": "{authorize_url}" },
-      { "type": "wait_for_callback" }
-    ]
+    }
   }
 }

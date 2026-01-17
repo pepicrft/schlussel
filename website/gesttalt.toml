@@ -1,5 +1,0 @@
-# Site configuration
-title = "schlussel"
-description = "Platform-agnostic session management for concurrent agents"
-base_url = "https://schlussel.pepicrft.me"
-language = "en"

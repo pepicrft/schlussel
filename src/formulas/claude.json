@@ -1,14 +1,19 @@
 {
-  "schema": "v1",
+  "schema": "v2",
   "id": "claude",
-  "label": "Claude Code (Anthropic)",
-  "methods": ["authorization_code"],
-  "endpoints": {
-    "authorize": "https://console.anthropic.com/oauth/authorize",
-    "token": "https://console.anthropic.com/v1/oauth/token"
+  "label": "Claude (Anthropic)",
+  "description": "Authenticate with Anthropic's Claude API using OAuth or API keys. Power your agents with Claude's advanced language models through the Messages API.",
+  "apis": {
+    "messages": {
+      "base_url": "https://api.anthropic.com/v1",
+      "auth_header": "x-api-key: {token}",
+      "docs_url": "https://docs.anthropic.com/en/api",
+      "spec_url": "https://docs.anthropic.com/openapi/claude-api.json",
+      "spec_type": "openapi",
+      "methods": ["authorization_code", "api_key"]
+    }
   },
-  "scope": "user:profile user:inference user:sessions:claude_code",
-  "public_clients": [
+  "clients": [
     {
       "name": "claude-code",
       "id": "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
@@ -16,17 +21,37 @@
       "methods": ["authorization_code"]
     }
   ],
-  "script": {
-    "register": {
-      "url": "https://console.anthropic.com",
-      "steps": [
-        "Sign up for an Anthropic account at https://console.anthropic.com",
-        "A Claude Pro, Max, Team, or Enterprise subscription is required for Claude Code access"
+  "methods": {
+    "authorization_code": {
+      "endpoints": {
+        "authorize": "https://console.anthropic.com/oauth/authorize",
+        "token": "https://console.anthropic.com/v1/oauth/token"
+      },
+      "scope": "user:profile user:inference user:sessions:claude_code",
+      "register": {
+        "url": "https://console.anthropic.com",
+        "steps": [
+          "Sign up for an Anthropic account at https://console.anthropic.com",
+          "A Claude Pro, Max, Team, or Enterprise subscription is required for Claude Code access"
+        ]
+      },
+      "script": [
+        { "type": "open_url", "value": "{authorize_url}" },
+        { "type": "wait_for_callback" }
       ]
     },
-    "steps": [
-      { "type": "open_url", "value": "{authorize_url}" },
-      { "type": "wait_for_callback" }
-    ]
+    "api_key": {
+      "register": {
+        "url": "https://console.anthropic.com/settings/keys",
+        "steps": [
+          "Go to Console > API Keys",
+          "Create a new API key",
+          "Copy the key"
+        ]
+      },
+      "script": [
+        { "type": "copy_key", "note": "Paste your Anthropic API key" }
+      ]
+    }
   }
 }

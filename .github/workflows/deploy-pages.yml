@@ -5,7 +5,7 @@ on:
     branches: [ main ]
 
 concurrency:
-  group: deploy-pages-${{ github.ref }}
+  group: deploy-website-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -16,23 +16,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
       - name: Install tools with mise
         uses: jdx/mise-action@v2
 
-      - name: Build static site
+      - name: Install dependencies
         working-directory: website
-        run: gesttalt build
+        run: pnpm install
 
-      - name: Deploy to Cloudflare Pages
+      - name: Build formulas
+        working-directory: website
+        run: pnpm run build:formulas
+
+      - name: Deploy to Cloudflare Workers
+        working-directory: website
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: |
-          wrangler pages deploy website/build \
-            --project-name schlussel \
-            --branch "${GITHUB_REF_NAME}"
+        run: pnpm exec wrangler deploy

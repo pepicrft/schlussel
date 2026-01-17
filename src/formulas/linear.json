@@ -1,0 +1,89 @@
+{
+  "schema": "v2",
+  "id": "linear",
+  "label": "Linear",
+  "description": "Authenticate with Linear using OAuth, API keys, or MCP OAuth with dynamic client registration. Access issues, projects, and teams through GraphQL or MCP endpoints.",
+  "clients": [
+    {
+      "name": "linear-vscode",
+      "id": "3117bb53c858872ff5cd4f9e0b3d0b5d",
+      "secret": "2cafd5d87b5fab6937ea3e157504dbd3",
+      "source": "https://github.com/linear/linear-vscode-connect-extension",
+      "methods": ["oauth"]
+    }
+  ],
+  "identity": {
+    "label": "Workspace",
+    "hint": "Use the workspace slug (e.g., acme)"
+  },
+  "methods": {
+    "oauth": {
+      "label": "OAuth",
+      "endpoints": {
+        "authorize": "https://linear.app/oauth/authorize",
+        "token": "https://api.linear.app/oauth/token"
+      },
+      "scope": "read write",
+      "register": {
+        "url": "https://linear.app/settings/api/applications/new",
+        "steps": [
+          "Create a new OAuth application",
+          "Set redirect URI to http://127.0.0.1:0/callback",
+          "Copy the client ID and secret"
+        ]
+      },
+      "script": [
+        { "type": "open_url", "value": "{authorize_url}" },
+        { "type": "wait_for_callback" }
+      ]
+    },
+    "api_key": {
+      "label": "API Key",
+      "register": {
+        "url": "https://linear.app/settings/api",
+        "steps": [
+          "Go to Settings > API",
+          "Create a personal API key",
+          "Copy the key"
+        ]
+      },
+      "script": [
+        { "type": "copy_key", "note": "Paste your Linear API key" }
+      ]
+    },
+    "mcp_oauth": {
+      "label": "MCP OAuth",
+      "endpoints": {
+        "registration": "https://mcp.linear.app/register",
+        "authorize": "https://mcp.linear.app/authorize",
+        "token": "https://mcp.linear.app/token"
+      },
+      "dynamic_registration": {
+        "client_name": "schlussel",
+        "grant_types": ["authorization_code", "refresh_token"],
+        "response_types": ["code"],
+        "token_endpoint_auth_method": "none"
+      },
+      "script": [
+        { "type": "open_url", "value": "{authorize_url}" },
+        { "type": "wait_for_callback" }
+      ]
+    }
+  },
+  "apis": {
+    "graphql": {
+      "base_url": "https://api.linear.app/graphql",
+      "auth_header": "Authorization: {token}",
+      "docs_url": "https://developers.linear.app/docs",
+      "spec_url": "https://api.linear.app/graphql",
+      "spec_type": "graphql",
+      "methods": ["oauth", "api_key"]
+    },
+    "mcp": {
+      "base_url": "https://mcp.linear.app/mcp",
+      "auth_header": "Authorization: Bearer {token}",
+      "docs_url": "https://linear.app/docs/mcp",
+      "methods": ["mcp_oauth"]
+    }
+  }
+}

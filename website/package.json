@@ -1,0 +1,20 @@
+{
+  "name": "schlussel-website",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Website and API for Schlussel - Auth runtime for agents",
+  "scripts": {
+    "build:formulas": "node scripts/build-formulas.js",
+    "dev": "pnpm run build:formulas && wrangler dev",
+    "deploy": "pnpm run build:formulas && wrangler deploy",
+    "build": "pnpm run build:formulas && wrangler deploy --dry-run"
+  },
+  "dependencies": {
+    "hono": "^4.7.0",
+    "workers-og": "^0.0.27"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250109.0",
+    "wrangler": "^3.0.0"
+  }
+}

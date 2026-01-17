@@ -1,0 +1,7 @@
+name = "schlussel"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+routes = [
+  { pattern = "schlussel.pepicrft.me", custom_domain = true }
+]

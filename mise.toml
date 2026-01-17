@@ -1,5 +1,7 @@
 [tools]
 zig = "0.15.2"
+node = "24"
+pnpm = "latest"
 "git-cliff" = "2.7.0"
 "github:pepicrft/gesttalt" = "latest"
 "npm:wrangler" = "3"
