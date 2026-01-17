@@ -617,7 +617,7 @@ export function renderHomepage(): string {
 '  <meta name="keywords" content="authentication, oauth, agents, cli, runtime, tokens, api, github, linear, claude, codex">\n' +
 '  <meta name="author" content="Pedro Pinera">\n' +
 '  <link rel="canonical" href="' + url + '">\n' +
-'  <link rel="icon" type="image/svg+xml" href="/favicon.svg">\n' +
+'  <link rel="icon" type="image/png" href="/favicon.png">\n' +
 '  <!-- Open Graph / Facebook -->\n' +
 '  <meta property="og:type" content="website">\n' +
 '  <meta property="og:url" content="' + url + '">\n' +
@@ -1204,7 +1204,7 @@ export function renderFormulaPage(formula: Formula): string {
 '  <meta name="keywords" content="authentication, oauth, ' + formula.id + ', ' + formula.label + ', agents, cli, runtime">\n' +
 '  <meta name="author" content="Pedro Pinera">\n' +
 '  <link rel="canonical" href="' + url + '">\n' +
-'  <link rel="icon" type="image/svg+xml" href="/favicon.svg">\n' +
+'  <link rel="icon" type="image/png" href="/favicon.png">\n' +
 '  <!-- Open Graph / Facebook -->\n' +
 '  <meta property="og:type" content="article">\n' +
 '  <meta property="og:url" content="' + url + '">\n' +
