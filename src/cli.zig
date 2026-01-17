@@ -458,7 +458,6 @@ const token_params = clap.parseParamsComptime(
     \\
 );
 
-
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
