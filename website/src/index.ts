@@ -9,6 +9,20 @@ const app = new Hono();
 // Enable CORS for API routes
 app.use('/api/*', cors());
 
+// Favicon
+app.get('/favicon.svg', (c) => {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <circle cx="30" cy="30" r="20" fill="#FFE135" stroke="#2D3436" stroke-width="6"/>
+  <circle cx="30" cy="30" r="8" fill="#2D3436"/>
+  <rect x="45" y="24" width="45" height="12" rx="4" fill="#FFE135" stroke="#2D3436" stroke-width="6"/>
+  <rect x="70" y="36" width="8" height="15" rx="2" fill="#FFE135" stroke="#2D3436" stroke-width="4"/>
+  <rect x="82" y="36" width="8" height="10" rx="2" fill="#FFE135" stroke="#2D3436" stroke-width="4"/>
+</svg>`;
+  c.header('Content-Type', 'image/svg+xml');
+  c.header('Cache-Control', 'public, max-age=31536000');
+  return c.body(svg);
+});
+
 // Homepage
 app.get('/', (c) => {
   return c.html(renderHomepage());
