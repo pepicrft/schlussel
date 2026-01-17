@@ -725,6 +725,9 @@ const TestRegistrationServer = struct {
 };
 
 test "dynamic registration HTTP lifecycle" {
+    // Skip this test on Windows due to flaky socket behavior in CI
+    if (@import("builtin").os.tag == .windows) return error.SkipZigTest;
+
     const allocator = std.testing.allocator;
 
     var server = try TestRegistrationServer.init();
