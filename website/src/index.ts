@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { ImageResponse } from 'workers-og';
 import { formulas, getFormula, listFormulas, searchFormulas } from './formulas-data';
-import { renderHomepage, renderFormulaPage, renderSkillPage } from './html';
+import { renderHomepage, renderFormulaPage, renderSkillPage, renderDocsPage } from './html';
 import skillContent from './skill.md';
 
 const app = new Hono();
@@ -58,6 +58,11 @@ app.get('/skill', (c) => {
   return c.html(renderSkillPage(skillContent));
 });
 
+// Documentation page
+app.get('/docs', (c) => {
+  return c.html(renderDocsPage());
+});
+
 // Raw skill markdown
 app.get('/skill.md', (c) => {
   c.header('Content-Type', 'text/markdown; charset=utf-8');
@@ -71,6 +76,8 @@ app.get('/sitemap.xml', (c) => {
 
   const urls = [
     { loc: baseUrl, priority: '1.0', changefreq: 'weekly' },
+    { loc: baseUrl + '/docs', priority: '0.9', changefreq: 'weekly' },
+    { loc: baseUrl + '/skill', priority: '0.8', changefreq: 'weekly' },
     ...formulaList.map(f => ({
       loc: baseUrl + '/formulas/' + f.id,
       priority: '0.8',
@@ -147,6 +154,33 @@ app.get('/og/skill.png', async () => {
         </div>
         <div style="display: flex; background: #2D3436; color: #FFE135; padding: 20px 40px; border-radius: 16px; font-size: 28px; font-family: monospace; border: 4px solid #2D3436;">
           Copy into your agent config
+        </div>
+      </div>
+    </div>
+  `;
+
+  return new ImageResponse(html, {
+    width: 1200,
+    height: 630,
+  });
+});
+
+// OG Image for docs page
+app.get('/og/docs.png', async () => {
+  const html = `
+    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; width: 1200px; height: 630px; background: #FFFBF0; font-family: sans-serif;">
+      <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; background: #FFFFFF; padding: 60px 80px; border-radius: 32px; border: 6px solid #2D3436; box-shadow: 12px 12px 0px #2D3436;">
+        <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 20px;">
+          <span style="font-size: 28px; font-weight: 600; color: #2D3436;">github.com/pepicrft/schlussel</span>
+        </div>
+        <div style="display: flex; font-size: 64px; font-weight: 700; color: #2D3436; margin-bottom: 20px; text-align: center;">
+          Documentation
+        </div>
+        <div style="display: flex; background: #A66CFF; color: white; padding: 12px 24px; border-radius: 50px; font-size: 24px; font-weight: 600; border: 4px solid #2D3436; box-shadow: 4px 4px 0px #2D3436; margin-bottom: 30px;">
+          Formula Spec & CLI Reference
+        </div>
+        <div style="display: flex; background: #2D3436; color: #FFE135; padding: 20px 40px; border-radius: 16px; font-size: 28px; font-family: monospace; border: 4px solid #2D3436;">
+          Everything you need to know
         </div>
       </div>
     </div>

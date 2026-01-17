@@ -39,24 +39,44 @@ The command outputs JSON with the token information:
 ### Get a stored token
 
 ```bash
+# By full key
 schlussel token get --key <storage_key>
+
+# By key components
+schlussel token get --formula <formula> [--method <method>] [--identity <identity>]
+
+# Disable auto-refresh (tokens are auto-refreshed by default)
+schlussel token get --formula github --method authorization_code --no-refresh
+
+# Output as JSON
+schlussel token get --formula github --method device_code --json
 ```
 
-Returns the token if it exists and is still valid.
+Returns the access token if it exists. OAuth2 tokens are automatically refreshed if expired or expiring soon (uses cross-process locking). Use `--no-refresh` to disable this.
 
 ### List stored tokens
 
 ```bash
+# List all tokens
 schlussel token list
+
+# Filter by formula
+schlussel token list --formula github
+
+# Filter by method
+schlussel token list --method device_code
+
+# Output as JSON
+schlussel token list --json
 ```
 
-### Get formula information
+### Delete a token
 
 ```bash
-schlussel info <formula>
+schlussel token delete --key <storage_key>
+# or
+schlussel token delete --formula <formula> --method <method>
 ```
-
-Returns details about a formula including available methods, APIs, and public clients.
 
 ## Available Formulas
 
@@ -108,11 +128,14 @@ When an API has variables, replace the `{variable}` placeholders in the base URL
 After authenticating, use the token with the API as specified in the formula's `apis` section:
 
 ```bash
-# Get the token
-TOKEN=$(schlussel token get --key github:personal:device_code | jq -r '.access_token')
+# Get the token (outputs just the access token by default)
+TOKEN=$(schlussel token get --formula github --method device_code --identity personal)
 
 # Use it with the API (auth_header from formula: "Authorization: Bearer {token}")
 curl -H "Authorization: Bearer $TOKEN" https://api.github.com/user
+
+# Or get full token info as JSON
+schlussel token get --formula github --method device_code --json
 ```
 
 ## Best Practices
@@ -127,12 +150,14 @@ curl -H "Authorization: Bearer $TOKEN" https://api.github.com/user
 
 ```bash
 # 1. Check if we already have a token
-if ! schlussel token get --key github:personal:device_code > /dev/null 2>&1; then
+if ! schlussel token get --formula github --method device_code --identity personal > /dev/null 2>&1; then
   # 2. If not, authenticate (will prompt user)
   schlussel run github --method device_code --identity personal
 fi
 
-# 3. Get the token and use it
-TOKEN=$(schlussel token get --key github:personal:device_code | jq -r '.access_token')
+# 3. Get the token and use it (auto-refreshes OAuth2 tokens if expiring)
+TOKEN=$(schlussel token get --formula github --method device_code --identity personal)
 curl -H "Authorization: Bearer $TOKEN" https://api.github.com/user/repos
 ```
+
+OAuth2 tokens are automatically refreshed when expired or expiring soon. Cross-process locking ensures only one process refreshes at a time, making it safe for concurrent use.

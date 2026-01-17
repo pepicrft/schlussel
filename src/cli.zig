@@ -464,7 +464,7 @@ const token_params = clap.parseParamsComptime(
     \\    --formula <str>             Filter by formula ID (e.g., github).
     \\    --method <str>              Filter by auth method (e.g., device_code).
     \\    --identity <str>            Filter by identity label (e.g., personal).
-    \\    --refresh                   Auto-refresh OAuth2 tokens if expired/expiring.
+    \\    --no-refresh                Disable auto-refresh of OAuth2 tokens.
     \\-j, --json                      Output as JSON.
     \\<str>                           Action (get, list, delete).
     \\
@@ -1381,6 +1381,121 @@ fn cmdScript(allocator: Allocator, args: []const []const u8, stdout: anytype, st
     }
 }
 
+/// Parse a storage key into its components (formula, method, identity)
+fn parseStorageKey(key: []const u8) struct { formula: []const u8, method: ?[]const u8, identity: ?[]const u8 } {
+    var parts_iter = std.mem.splitScalar(u8, key, ':');
+    const formula = parts_iter.first();
+    const method = parts_iter.next();
+    const identity = parts_iter.next();
+    return .{ .formula = formula, .method = method, .identity = identity };
+}
+
+/// Build a storage key from components
+fn buildStorageKey(allocator: Allocator, formula: []const u8, method: ?[]const u8, identity: ?[]const u8) ![]const u8 {
+    if (method) |m| {
+        if (identity) |i| {
+            return std.fmt.allocPrint(allocator, "{s}:{s}:{s}", .{ formula, m, i });
+        }
+        return std.fmt.allocPrint(allocator, "{s}:{s}", .{ formula, m });
+    }
+    return allocator.dupe(u8, formula);
+}
+
+/// Check if a key matches the given filter criteria
+fn keyMatchesFilter(key: []const u8, formula_filter: ?[]const u8, method_filter: ?[]const u8, identity_filter: ?[]const u8) bool {
+    const parsed = parseStorageKey(key);
+
+    if (formula_filter) |f| {
+        if (!std.mem.eql(u8, parsed.formula, f)) return false;
+    }
+    if (method_filter) |m| {
+        if (parsed.method == null or !std.mem.eql(u8, parsed.method.?, m)) return false;
+    }
+    if (identity_filter) |i| {
+        if (parsed.identity == null or !std.mem.eql(u8, parsed.identity.?, i)) return false;
+    }
+    return true;
+}
+
+/// List all token files in storage directory
+fn listTokenFiles(allocator: Allocator, storage_path: []const u8) ![][]const u8 {
+    var keys: std.ArrayListUnmanaged([]const u8) = .{};
+    errdefer {
+        for (keys.items) |k| allocator.free(k);
+        keys.deinit(allocator);
+    }
+
+    var dir = std.fs.cwd().openDir(storage_path, .{ .iterate = true }) catch |err| {
+        if (err == error.FileNotFound) return keys.toOwnedSlice(allocator);
+        return err;
+    };
+    defer dir.close();
+
+    var dir_iter = dir.iterate();
+    while (try dir_iter.next()) |entry| {
+        if (entry.kind != .file) continue;
+        if (!std.mem.endsWith(u8, entry.name, ".json")) continue;
+
+        // Remove .json extension to get the key
+        const token_key = entry.name[0 .. entry.name.len - 5];
+        try keys.append(allocator, try allocator.dupe(u8, token_key));
+    }
+
+    return keys.toOwnedSlice(allocator);
+}
+
+/// Get the storage path for schlussel
+fn getTokenStoragePath(allocator: Allocator) ![]const u8 {
+    const builtin = @import("builtin");
+
+    if (builtin.os.tag == .linux) {
+        if (std.process.getEnvVarOwned(allocator, "XDG_DATA_HOME")) |xdg_data| {
+            defer allocator.free(xdg_data);
+            return std.fmt.allocPrint(allocator, "{s}/schlussel", .{xdg_data});
+        } else |_| {}
+        if (std.process.getEnvVarOwned(allocator, "HOME")) |home| {
+            defer allocator.free(home);
+            return std.fmt.allocPrint(allocator, "{s}/.local/share/schlussel", .{home});
+        } else |_| {}
+    } else if (builtin.os.tag == .macos) {
+        if (std.process.getEnvVarOwned(allocator, "HOME")) |home| {
+            defer allocator.free(home);
+            return std.fmt.allocPrint(allocator, "{s}/Library/Application Support/schlussel", .{home});
+        } else |_| {}
+    } else if (builtin.os.tag == .windows) {
+        if (std.process.getEnvVarOwned(allocator, "LOCALAPPDATA")) |local_app_data| {
+            defer allocator.free(local_app_data);
+            return std.fmt.allocPrint(allocator, "{s}\\schlussel", .{local_app_data});
+        } else |_| {}
+    }
+
+    return std.fmt.allocPrint(allocator, "/tmp/schlussel", .{});
+}
+
+fn outputToken(stdout: anytype, key: []const u8, token: session.Token, json_output: bool) !void {
+    if (json_output) {
+        try stdout.print("{{\n", .{});
+        try stdout.print("  \"key\": \"{s}\",\n", .{key});
+        try stdout.print("  \"access_token\": \"{s}\",\n", .{token.access_token});
+        try stdout.print("  \"token_type\": \"{s}\"", .{token.token_type});
+        if (token.refresh_token) |rt| {
+            try stdout.print(",\n  \"refresh_token\": \"{s}\"", .{rt});
+        }
+        if (token.scope) |s| {
+            try stdout.print(",\n  \"scope\": \"{s}\"", .{s});
+        }
+        if (token.expires_at) |exp| {
+            try stdout.print(",\n  \"expires_at\": {d}", .{exp});
+        }
+        if (token.expires_in) |exp| {
+            try stdout.print(",\n  \"expires_in\": {d}", .{exp});
+        }
+        try stdout.print("\n}}\n", .{});
+    } else {
+        try stdout.print("{s}\n", .{token.access_token});
+    }
+}
+
 fn cmdToken(allocator: Allocator, args: []const []const u8, stdout: anytype, stderr: anytype) !void {
     var diag: clap.Diagnostic = .{};
     var iter = clap.args.SliceIterator{ .args = args };
@@ -1398,8 +1513,244 @@ fn cmdToken(allocator: Allocator, args: []const []const u8, stdout: anytype, std
         return;
     }
 
-    try stderr.print("Token management not yet implemented\n", .{});
-    return error.NotImplemented;
+    const action = if (res.positionals.len > 0) res.positionals[0] orelse {
+        try stderr.print("Error: Missing action (get, list, delete)\n\n", .{});
+        try clap.help(stderr, clap.Help, &token_params, .{});
+        return error.MissingArguments;
+    } else {
+        try stderr.print("Error: Missing action (get, list, delete)\n\n", .{});
+        try clap.help(stderr, clap.Help, &token_params, .{});
+        return error.MissingArguments;
+    };
+
+    const key_arg = res.args.key;
+    const formula_filter = res.args.formula;
+    const method_filter = res.args.method;
+    const identity_filter = res.args.identity;
+    const auto_refresh = res.args.@"no-refresh" == 0; // Refresh by default
+    const json_output = res.args.json != 0;
+
+    var storage = try session.FileStorage.init(allocator, "schlussel");
+    defer storage.deinit();
+
+    const storage_path = try getTokenStoragePath(allocator);
+    defer allocator.free(storage_path);
+
+    if (std.mem.eql(u8, action, "get")) {
+        // Determine the key to use
+        var key: []const u8 = undefined;
+        var key_owned = false;
+
+        if (key_arg) |k| {
+            key = k;
+        } else if (formula_filter != null) {
+            // Build key from components
+            key = try buildStorageKey(allocator, formula_filter.?, method_filter, identity_filter);
+            key_owned = true;
+        } else {
+            try stderr.print("Error: Either --key or --formula is required for 'get'\n", .{});
+            return error.MissingArguments;
+        }
+        defer if (key_owned) allocator.free(key);
+
+        var token = (try storage.storage().load(allocator, key)) orelse {
+            try stderr.print("Error: Token not found for key '{s}'\n", .{key});
+            return error.NotFound;
+        };
+        defer token.deinit();
+
+        // Auto-refresh if requested and token is OAuth2 with refresh_token
+        if (auto_refresh and token.refresh_token != null) {
+            const now = @as(u64, @intCast(std.time.timestamp()));
+            const needs_refresh = if (token.expires_at) |expires_at|
+                now + 300 >= expires_at // Refresh if expiring within 5 minutes
+            else
+                false;
+
+            if (needs_refresh) {
+                // Acquire cross-process lock before refreshing
+                var lock_manager = try lock.RefreshLockManager.init(allocator, "schlussel");
+                defer lock_manager.deinit();
+
+                // Convert key colons to underscores for lock file name
+                var lock_key_buf: [256]u8 = undefined;
+                var lock_key_len: usize = 0;
+                for (key) |c| {
+                    if (lock_key_len >= lock_key_buf.len) break;
+                    lock_key_buf[lock_key_len] = if (c == ':') '_' else c;
+                    lock_key_len += 1;
+                }
+                const lock_key = lock_key_buf[0..lock_key_len];
+
+                var refresh_lock = try lock_manager.acquire(lock_key);
+                defer refresh_lock.release();
+
+                // Re-check if token still needs refresh (another process may have refreshed it)
+                var fresh_token = (try storage.storage().load(allocator, key)) orelse {
+                    try stderr.print("Error: Token not found after acquiring lock\n", .{});
+                    return error.NotFound;
+                };
+
+                const still_needs_refresh = if (fresh_token.expires_at) |expires_at|
+                    now + 300 >= expires_at
+                else
+                    false;
+
+                if (still_needs_refresh and fresh_token.refresh_token != null) {
+                    // Parse key to get formula and method for OAuth config
+                    const parsed = parseStorageKey(key);
+
+                    // Try to find the formula to get token endpoint
+                    const formula_ptr = formulas.findById(allocator, parsed.formula) catch null;
+                    if (formula_ptr) |formula| {
+                        const method_name = parsed.method orelse "oauth";
+
+                        var owned_config = oauth.configFromFormula(
+                            allocator,
+                            formula,
+                            method_name,
+                            null, // client_id - use formula default
+                            null, // client_secret
+                            "http://127.0.0.1:0/callback",
+                            null, // scope
+                        ) catch {
+                            // Can't build config, return existing token
+                            token.deinit();
+                            token = fresh_token;
+                            if (!json_output) {
+                                try stderr.print("Warning: Could not refresh token (missing OAuth config)\n", .{});
+                            }
+                            try outputToken(stdout, key, token, json_output);
+                            return;
+                        };
+                        defer owned_config.deinit();
+
+                        var mem_storage = session.MemoryStorage.init(allocator);
+                        defer mem_storage.deinit();
+
+                        var client = oauth.OAuthClient.init(allocator, owned_config.toConfig(), mem_storage.storage());
+                        defer client.deinit();
+
+                        // Perform refresh
+                        var new_token = client.refreshToken(fresh_token.refresh_token.?) catch |err| {
+                            // Refresh failed, return existing token
+                            token.deinit();
+                            token = fresh_token;
+                            if (!json_output) {
+                                try stderr.print("Warning: Token refresh failed: {s}\n", .{@errorName(err)});
+                            }
+                            try outputToken(stdout, key, token, json_output);
+                            return;
+                        };
+
+                        // Preserve refresh token if not in response
+                        if (new_token.refresh_token == null and fresh_token.refresh_token != null) {
+                            new_token.refresh_token = try allocator.dupe(u8, fresh_token.refresh_token.?);
+                        }
+
+                        // Save new token
+                        try storage.storage().save(key, new_token);
+
+                        fresh_token.deinit();
+                        token.deinit();
+                        token = new_token;
+
+                        if (!json_output) {
+                            try stderr.print("Token refreshed successfully\n", .{});
+                        }
+                    } else {
+                        // No formula found, return existing token
+                        token.deinit();
+                        token = fresh_token;
+                    }
+                } else {
+                    // Token was already refreshed by another process
+                    token.deinit();
+                    token = fresh_token;
+                }
+            }
+        }
+
+        try outputToken(stdout, key, token, json_output);
+    } else if (std.mem.eql(u8, action, "list")) {
+        const keys = try listTokenFiles(allocator, storage_path);
+        defer {
+            for (keys) |k| allocator.free(k);
+            allocator.free(keys);
+        }
+
+        // Filter keys
+        var filtered: std.ArrayListUnmanaged([]const u8) = .{};
+        defer filtered.deinit(allocator);
+
+        for (keys) |k| {
+            // If --key is provided, use it as prefix filter
+            if (key_arg) |prefix| {
+                if (!std.mem.startsWith(u8, k, prefix)) continue;
+            }
+            if (keyMatchesFilter(k, formula_filter, method_filter, identity_filter)) {
+                try filtered.append(allocator, k);
+            }
+        }
+
+        if (json_output) {
+            try stdout.print("[\n", .{});
+            for (filtered.items, 0..) |k, idx| {
+                const parsed = parseStorageKey(k);
+                try stdout.print("  {{\n", .{});
+                try stdout.print("    \"key\": \"{s}\",\n", .{k});
+                try stdout.print("    \"formula\": \"{s}\"", .{parsed.formula});
+                if (parsed.method) |m| {
+                    try stdout.print(",\n    \"method\": \"{s}\"", .{m});
+                }
+                if (parsed.identity) |i| {
+                    try stdout.print(",\n    \"identity\": \"{s}\"", .{i});
+                }
+                try stdout.print("\n  }}", .{});
+                if (idx < filtered.items.len - 1) try stdout.print(",", .{});
+                try stdout.print("\n", .{});
+            }
+            try stdout.print("]\n", .{});
+        } else {
+            if (filtered.items.len == 0) {
+                try stdout.print("No tokens found\n", .{});
+            } else {
+                try stdout.print("Stored tokens:\n", .{});
+                for (filtered.items) |k| {
+                    const parsed = parseStorageKey(k);
+                    try stdout.print("  {s}", .{k});
+                    if (parsed.identity) |i| {
+                        try stdout.print(" (identity: {s})", .{i});
+                    }
+                    try stdout.print("\n", .{});
+                }
+            }
+        }
+    } else if (std.mem.eql(u8, action, "delete")) {
+        var key: []const u8 = undefined;
+        var key_owned = false;
+
+        if (key_arg) |k| {
+            key = k;
+        } else if (formula_filter != null) {
+            key = try buildStorageKey(allocator, formula_filter.?, method_filter, identity_filter);
+            key_owned = true;
+        } else {
+            try stderr.print("Error: Either --key or --formula is required for 'delete'\n", .{});
+            return error.MissingArguments;
+        }
+        defer if (key_owned) allocator.free(key);
+
+        try storage.storage().delete(key);
+        if (!json_output) {
+            try stdout.print("Token deleted: {s}\n", .{key});
+        } else {
+            try stdout.print("{{\"deleted\": \"{s}\"}}\n", .{key});
+        }
+    } else {
+        try stderr.print("Error: Unknown action '{s}'. Use: get, list, delete\n", .{action});
+        return error.InvalidParameter;
+    }
 }
 
 fn cmdRegister(allocator: Allocator, args: []const []const u8, stdout: anytype, stderr: anytype) !void {

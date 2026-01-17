@@ -27,6 +27,10 @@ const css = `
 
 *, *::before, *::after { box-sizing: border-box; }
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   margin: 0;
   padding: 0;
@@ -141,6 +145,37 @@ pre code {
   background: var(--yellow);
   color: var(--dark);
   transform: translateY(-2px);
+}
+
+.nav__toggle {
+  display: none;
+  flex-direction: column;
+  gap: 5px;
+  padding: var(--space-xs);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.nav__toggle span {
+  display: block;
+  width: 24px;
+  height: 3px;
+  background: var(--dark);
+  border-radius: 2px;
+  transition: all 0.3s ease;
+}
+
+.nav__toggle.active span:nth-child(1) {
+  transform: rotate(45deg) translate(5px, 5px);
+}
+
+.nav__toggle.active span:nth-child(2) {
+  opacity: 0;
+}
+
+.nav__toggle.active span:nth-child(3) {
+  transform: rotate(-45deg) translate(6px, -6px);
 }
 
 .hero {
@@ -613,8 +648,34 @@ pre code {
 }
 
 @media (max-width: 900px) {
+  .nav__toggle {
+    display: flex;
+  }
+
   .nav__links {
     display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: var(--cream);
+    border-bottom: var(--border);
+    padding: var(--space-sm);
+    flex-direction: column;
+    gap: var(--space-xs);
+  }
+
+  .nav__links.open {
+    display: flex;
+  }
+
+  .nav__link {
+    padding: var(--space-sm);
+    text-align: center;
+  }
+
+  .nav__inner {
+    position: relative;
   }
 }
 
@@ -726,12 +787,17 @@ export function renderHomepage(): string {
 '        <span class="nav__key">🔑</span>\n' +
 '        <span>schlussel</span>\n' +
 '      </a>\n' +
+'      <button class="nav__toggle" aria-label="Toggle menu">\n' +
+'        <span></span>\n' +
+'        <span></span>\n' +
+'        <span></span>\n' +
+'      </button>\n' +
 '      <div class="nav__links">\n' +
 '        <a href="#features" class="nav__link">Features</a>\n' +
 '        <a href="#how-it-works" class="nav__link">How it works</a>\n' +
 '        <a href="#formulas" class="nav__link">Formulas</a>\n' +
+'        <a href="/docs" class="nav__link">Docs</a>\n' +
 '        <a href="/skill" class="nav__link">SKILL.md</a>\n' +
-'        <a href="/api/formulas" class="nav__link">API</a>\n' +
 '        <a href="https://github.com/pepicrft/schlussel" class="nav__link">GitHub</a>\n' +
 '      </div>\n' +
 '    </div>\n' +
@@ -1000,6 +1066,14 @@ export function renderHomepage(): string {
 '      searchResults.innerHTML = renderResults(results);\n' +
 '      searchResults.classList.add("active");\n' +
 '      formulaBadgesEl.style.display = "none";\n' +
+'    });\n' +
+'\n' +
+'    // Mobile nav toggle\n' +
+'    const navToggle = document.querySelector(".nav__toggle");\n' +
+'    const navLinks = document.querySelector(".nav__links");\n' +
+'    navToggle.addEventListener("click", () => {\n' +
+'      navToggle.classList.toggle("active");\n' +
+'      navLinks.classList.toggle("open");\n' +
 '    });\n' +
 '  </script>\n' +
 '</body>\n' +
@@ -1612,7 +1686,9 @@ export function renderFormulaPage(formula: Formula): string {
         <div class="playground__device-code" id="device-code-box" style="display: none;">
           <p>Open <a id="device-link" href="#" target="_blank"></a> and enter this code:</p>
           <div class="playground__device-code-value" id="device-code-value"></div>
-          <button class="playground__device-code-copy" id="copy-code-btn">Copy Code</button>
+          <div>
+            <button class="playground__device-code-copy" id="copy-code-btn">Copy Code</button>
+          </div>
         </div>
 
         <div class="playground__console">
@@ -1990,12 +2066,17 @@ console.log(data)\`;
 '        <span class="nav__key">🔑</span>\n' +
 '        <span>schlussel</span>\n' +
 '      </a>\n' +
+'      <button class="nav__toggle" aria-label="Toggle menu">\n' +
+'        <span></span>\n' +
+'        <span></span>\n' +
+'        <span></span>\n' +
+'      </button>\n' +
 '      <div class="nav__links">\n' +
 '        <a href="/#features" class="nav__link">Features</a>\n' +
 '        <a href="/#how-it-works" class="nav__link">How it works</a>\n' +
 '        <a href="/#formulas" class="nav__link">Formulas</a>\n' +
+'        <a href="/docs" class="nav__link">Docs</a>\n' +
 '        <a href="/skill" class="nav__link">SKILL.md</a>\n' +
-'        <a href="/api/formulas" class="nav__link">API</a>\n' +
 '        <a href="https://github.com/pepicrft/schlussel" class="nav__link">GitHub</a>\n' +
 '      </div>\n' +
 '    </div>\n' +
@@ -2040,9 +2121,171 @@ console.log(data)\`;
 '    </div>\n' +
 '  </footer>\n' +
        playgroundScript + '\n' +
+'  <script>\n' +
+'    // Mobile nav toggle\n' +
+'    const navToggle = document.querySelector(".nav__toggle");\n' +
+'    const navLinks = document.querySelector(".nav__links");\n' +
+'    navToggle.addEventListener("click", () => {\n' +
+'      navToggle.classList.toggle("active");\n' +
+'      navLinks.classList.toggle("open");\n' +
+'    });\n' +
+'  </script>\n' +
 '</body>\n' +
 '</html>';
 }
+
+const docsPageCss = `
+.docs-page {
+  padding: var(--space-lg) 0;
+  min-height: calc(100vh - 200px);
+}
+
+.docs-header {
+  text-align: center;
+  margin-bottom: var(--space-lg);
+}
+
+.docs-header__title {
+  font-size: clamp(2rem, 5vw, 3rem);
+  margin-bottom: var(--space-sm);
+}
+
+.docs-header__desc {
+  font-size: 1.1rem;
+  max-width: 700px;
+  margin: 0 auto var(--space-md);
+  opacity: 0.9;
+}
+
+.docs-nav {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-lg);
+}
+
+.docs-nav__link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--white);
+  border: var(--border-thick);
+  border-radius: 12px;
+  box-shadow: var(--shadow-cartoon);
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.docs-nav__link:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: var(--shadow-hover);
+  color: var(--dark);
+  background: var(--yellow);
+}
+
+.docs-nav__link--active {
+  background: var(--yellow);
+}
+
+.docs-section {
+  background: var(--white);
+  padding: var(--space-lg);
+  border-radius: 20px;
+  border: var(--border-thick);
+  box-shadow: var(--shadow-cartoon-lg);
+  max-width: 900px;
+  margin: 0 auto var(--space-lg);
+}
+
+.docs-section__title {
+  font-size: 1.8rem;
+  margin-bottom: var(--space-md);
+  padding-bottom: var(--space-xs);
+  border-bottom: 4px solid var(--yellow);
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.docs-section__title a,
+.docs-section__subtitle a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.docs-section__title a:hover,
+.docs-section__subtitle a:hover {
+  color: var(--purple);
+}
+
+.docs-section__subtitle {
+  font-size: 1.3rem;
+  margin-top: var(--space-md);
+  margin-bottom: var(--space-sm);
+  color: var(--purple);
+}
+
+.docs-section p {
+  margin-bottom: var(--space-sm);
+  line-height: 1.7;
+}
+
+.docs-section ul, .docs-section ol {
+  margin-bottom: var(--space-sm);
+  padding-left: var(--space-md);
+}
+
+.docs-section li {
+  margin-bottom: var(--space-xs);
+  line-height: 1.6;
+}
+
+.docs-section pre {
+  margin: var(--space-sm) 0;
+}
+
+.docs-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: var(--space-sm) 0;
+  font-size: 0.95rem;
+}
+
+.docs-table th,
+.docs-table td {
+  padding: var(--space-sm);
+  text-align: left;
+  border: 2px solid var(--dark);
+}
+
+.docs-table th {
+  background: var(--yellow-light);
+  font-weight: 700;
+}
+
+.docs-table tr:nth-child(even) {
+  background: var(--cream);
+}
+
+.docs-table code {
+  font-size: 0.85rem;
+}
+
+.docs-note {
+  background: var(--yellow-light);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: 12px;
+  border: var(--border);
+  margin: var(--space-sm) 0;
+}
+
+.docs-note__title {
+  font-weight: 700;
+  margin-bottom: var(--space-xs);
+}
+`;
 
 const skillPageCss = `
 .skill-page {
@@ -2219,12 +2462,17 @@ export function renderSkillPage(markdown: string): string {
 '        <span class="nav__key">🔑</span>\n' +
 '        <span>schlussel</span>\n' +
 '      </a>\n' +
+'      <button class="nav__toggle" aria-label="Toggle menu">\n' +
+'        <span></span>\n' +
+'        <span></span>\n' +
+'        <span></span>\n' +
+'      </button>\n' +
 '      <div class="nav__links">\n' +
 '        <a href="/#features" class="nav__link">Features</a>\n' +
 '        <a href="/#how-it-works" class="nav__link">How it works</a>\n' +
 '        <a href="/#formulas" class="nav__link">Formulas</a>\n' +
+'        <a href="/docs" class="nav__link">Docs</a>\n' +
 '        <a href="/skill" class="nav__link">SKILL.md</a>\n' +
-'        <a href="/api/formulas" class="nav__link">API</a>\n' +
 '        <a href="https://github.com/pepicrft/schlussel" class="nav__link">GitHub</a>\n' +
 '      </div>\n' +
 '    </div>\n' +
@@ -2269,6 +2517,627 @@ export function renderSkillPage(markdown: string): string {
 '        copyBtn.textContent = "Failed to copy";\n' +
 '        setTimeout(() => { copyBtn.textContent = "Copy Markdown"; }, 2000);\n' +
 '      }\n' +
+'    });\n' +
+'    // Mobile nav toggle\n' +
+'    const navToggle = document.querySelector(".nav__toggle");\n' +
+'    const navLinks = document.querySelector(".nav__links");\n' +
+'    navToggle.addEventListener("click", () => {\n' +
+'      navToggle.classList.toggle("active");\n' +
+'      navLinks.classList.toggle("open");\n' +
+'    });\n' +
+'  </script>\n' +
+'</body>\n' +
+'</html>';
+}
+
+export function renderDocsPage(): string {
+  const title = 'Documentation - Schlussel';
+  const description = 'Complete documentation for Schlussel: formula specification, CLI commands, and API reference. Learn how to authenticate with any provider.';
+  const url = 'https://schlussel.me/docs';
+
+  return '<!DOCTYPE html>\n' +
+'<html lang="en">\n' +
+'<head>\n' +
+'  <meta charset="UTF-8">\n' +
+'  <meta name="viewport" content="width=device-width, initial-scale=1.0">\n' +
+'  <title>' + title + '</title>\n' +
+'  <meta name="description" content="' + description + '">\n' +
+'  <meta name="keywords" content="schlussel, documentation, oauth, authentication, cli, formula, agents, api">\n' +
+'  <meta name="author" content="Pedro Pinera">\n' +
+'  <link rel="canonical" href="' + url + '">\n' +
+'  <link rel="icon" type="image/png" href="/favicon.png">\n' +
+'  <!-- Open Graph / Facebook -->\n' +
+'  <meta property="og:type" content="article">\n' +
+'  <meta property="og:url" content="' + url + '">\n' +
+'  <meta property="og:title" content="' + title + '">\n' +
+'  <meta property="og:description" content="' + description + '">\n' +
+'  <meta property="og:site_name" content="Schlussel">\n' +
+'  <meta property="og:image" content="https://schlussel.me/og/docs.png">\n' +
+'  <meta property="og:image:width" content="1200">\n' +
+'  <meta property="og:image:height" content="630">\n' +
+'  <!-- Twitter -->\n' +
+'  <meta name="twitter:card" content="summary_large_image">\n' +
+'  <meta name="twitter:url" content="' + url + '">\n' +
+'  <meta name="twitter:title" content="' + title + '">\n' +
+'  <meta name="twitter:description" content="' + description + '">\n' +
+'  <meta name="twitter:image" content="https://schlussel.me/og/docs.png">\n' +
+'  <meta name="twitter:site" content="@pepicrft">\n' +
+'  <meta name="twitter:creator" content="@pepicrft">\n' +
+'  <!-- Additional SEO -->\n' +
+'  <meta name="robots" content="index, follow">\n' +
+'  <link rel="preconnect" href="https://fonts.googleapis.com">\n' +
+'  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n' +
+'  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">\n' +
+'  <style>' + css + docsPageCss + '</style>\n' +
+'</head>\n' +
+'<body>\n' +
+'  <nav class="nav">\n' +
+'    <div class="container nav__inner">\n' +
+'      <a href="/" class="nav__brand">\n' +
+'        <span class="nav__key">🔑</span>\n' +
+'        <span>schlussel</span>\n' +
+'      </a>\n' +
+'      <button class="nav__toggle" aria-label="Toggle menu">\n' +
+'        <span></span>\n' +
+'        <span></span>\n' +
+'        <span></span>\n' +
+'      </button>\n' +
+'      <div class="nav__links">\n' +
+'        <a href="/#features" class="nav__link">Features</a>\n' +
+'        <a href="/#how-it-works" class="nav__link">How it works</a>\n' +
+'        <a href="/#formulas" class="nav__link">Formulas</a>\n' +
+'        <a href="/docs" class="nav__link">Docs</a>\n' +
+'        <a href="/skill" class="nav__link">SKILL.md</a>\n' +
+'        <a href="https://github.com/pepicrft/schlussel" class="nav__link">GitHub</a>\n' +
+'      </div>\n' +
+'    </div>\n' +
+'  </nav>\n' +
+'\n' +
+'  <main class="docs-page">\n' +
+'    <div class="container">\n' +
+'      <div class="docs-header">\n' +
+'        <h1 class="docs-header__title">Documentation</h1>\n' +
+'        <p class="docs-header__desc">\n' +
+'          Everything you need to know about using Schlussel for authentication.\n' +
+'        </p>\n' +
+'      </div>\n' +
+'\n' +
+'      <nav class="docs-nav">\n' +
+'        <a href="#formula-spec" class="docs-nav__link">📋 Formula Spec</a>\n' +
+'        <a href="#cli" class="docs-nav__link">💻 CLI Reference</a>\n' +
+'      </nav>\n' +
+'\n' +
+'      <!-- Formula Specification -->\n' +
+'      <section class="docs-section" id="formula-spec">\n' +
+'        <h2 class="docs-section__title"><a href="#formula-spec">📋 Formula Specification</a></h2>\n' +
+'        <p>\n' +
+'          Formulas are JSON files that describe how to authenticate with a provider. They contain\n' +
+'          everything needed: OAuth endpoints, auth methods, API definitions, and optional public clients.\n' +
+'        </p>\n' +
+'\n' +
+'        <h3 class="docs-section__subtitle" id="root-fields"><a href="#root-fields">Root Fields</a></h3>\n' +
+'        <table class="docs-table">\n' +
+'          <thead>\n' +
+'            <tr>\n' +
+'              <th>Field</th>\n' +
+'              <th>Required</th>\n' +
+'              <th>Description</th>\n' +
+'            </tr>\n' +
+'          </thead>\n' +
+'          <tbody>\n' +
+'            <tr>\n' +
+'              <td><code>schema</code></td>\n' +
+'              <td>Yes</td>\n' +
+'              <td>Version identifier. Must be <code>"v2"</code>.</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>id</code></td>\n' +
+'              <td>Yes</td>\n' +
+'              <td>Unique identifier (e.g., <code>github</code>, <code>stripe</code>). Used in CLI commands and storage keys.</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>label</code></td>\n' +
+'              <td>Yes</td>\n' +
+'              <td>Human-readable name for display.</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>description</code></td>\n' +
+'              <td>Yes</td>\n' +
+'              <td>Brief description of the provider and supported auth methods.</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>methods</code></td>\n' +
+'              <td>Yes</td>\n' +
+'              <td>Object defining authentication methods (see below).</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>apis</code></td>\n' +
+'              <td>Yes</td>\n' +
+'              <td>Object defining API endpoints.</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>clients</code></td>\n' +
+'              <td>No</td>\n' +
+'              <td>Array of public OAuth clients that can be used without registration.</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>identity</code></td>\n' +
+'              <td>No</td>\n' +
+'              <td>Hints for multi-account scenarios (label and hint text).</td>\n' +
+'            </tr>\n' +
+'          </tbody>\n' +
+'        </table>\n' +
+'\n' +
+'        <h3 class="docs-section__subtitle" id="methods"><a href="#methods">Methods</a></h3>\n' +
+'        <p>\n' +
+'          Each method defines an authentication flow. Common method names:\n' +
+'        </p>\n' +
+'        <ul>\n' +
+'          <li><code>authorization_code</code> - OAuth with browser redirect (has <code>endpoints.authorize</code> + <code>endpoints.token</code>)</li>\n' +
+'          <li><code>device_code</code> - OAuth device flow (has <code>endpoints.device</code> + <code>endpoints.token</code>)</li>\n' +
+'          <li><code>mcp_oauth</code> - MCP OAuth with dynamic registration (has <code>dynamic_registration</code> object)</li>\n' +
+'          <li><code>api_key</code> / <code>personal_access_token</code> - Manual credential (has <code>script</code> with <code>copy_key</code>)</li>\n' +
+'        </ul>\n' +
+'\n' +
+'        <table class="docs-table">\n' +
+'          <thead>\n' +
+'            <tr>\n' +
+'              <th>Field</th>\n' +
+'              <th>Description</th>\n' +
+'            </tr>\n' +
+'          </thead>\n' +
+'          <tbody>\n' +
+'            <tr>\n' +
+'              <td><code>label</code></td>\n' +
+'              <td>Human-readable name for the method.</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>endpoints</code></td>\n' +
+'              <td>OAuth endpoints: <code>authorize</code>, <code>token</code>, <code>device</code>, <code>registration</code>.</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>scope</code></td>\n' +
+'              <td>Space-separated OAuth scopes.</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>register</code></td>\n' +
+'              <td>Instructions for manual app registration (<code>url</code> and <code>steps</code> array).</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>script</code></td>\n' +
+'              <td>Array of steps guiding the user through authentication.</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>dynamic_registration</code></td>\n' +
+'              <td>RFC 7591 client registration parameters.</td>\n' +
+'            </tr>\n' +
+'          </tbody>\n' +
+'        </table>\n' +
+'\n' +
+'        <h3 class="docs-section__subtitle" id="script-steps"><a href="#script-steps">Script Steps</a></h3>\n' +
+'        <table class="docs-table">\n' +
+'          <thead>\n' +
+'            <tr>\n' +
+'              <th>Type</th>\n' +
+'              <th>Description</th>\n' +
+'              <th>Value</th>\n' +
+'            </tr>\n' +
+'          </thead>\n' +
+'          <tbody>\n' +
+'            <tr>\n' +
+'              <td><code>open_url</code></td>\n' +
+'              <td>User should open a URL</td>\n' +
+'              <td>URL or <code>{placeholder}</code></td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>enter_code</code></td>\n' +
+'              <td>User should enter a code</td>\n' +
+'              <td>Code or <code>{user_code}</code></td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>copy_key</code></td>\n' +
+'              <td>User should paste an API key</td>\n' +
+'              <td>-</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>wait_for_callback</code></td>\n' +
+'              <td>Wait for OAuth callback</td>\n' +
+'              <td>-</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>wait_for_token</code></td>\n' +
+'              <td>Poll for device code completion</td>\n' +
+'              <td>-</td>\n' +
+'            </tr>\n' +
+'          </tbody>\n' +
+'        </table>\n' +
+'\n' +
+'        <h3 class="docs-section__subtitle" id="placeholders"><a href="#placeholders">Placeholders</a></h3>\n' +
+'        <table class="docs-table">\n' +
+'          <thead>\n' +
+'            <tr>\n' +
+'              <th>Placeholder</th>\n' +
+'              <th>Description</th>\n' +
+'            </tr>\n' +
+'          </thead>\n' +
+'          <tbody>\n' +
+'            <tr>\n' +
+'              <td><code>{authorize_url}</code></td>\n' +
+'              <td>Full authorization URL with parameters</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>{verification_uri}</code></td>\n' +
+'              <td>URL to enter device code</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>{verification_uri_complete}</code></td>\n' +
+'              <td>URL with code pre-filled</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>{user_code}</code></td>\n' +
+'              <td>Code user enters at verification URL</td>\n' +
+'            </tr>\n' +
+'          </tbody>\n' +
+'        </table>\n' +
+'\n' +
+'        <h3 class="docs-section__subtitle" id="apis"><a href="#apis">APIs</a></h3>\n' +
+'        <p>Each API defines an endpoint that can be called with tokens from specified methods:</p>\n' +
+'        <table class="docs-table">\n' +
+'          <thead>\n' +
+'            <tr>\n' +
+'              <th>Field</th>\n' +
+'              <th>Required</th>\n' +
+'              <th>Description</th>\n' +
+'            </tr>\n' +
+'          </thead>\n' +
+'          <tbody>\n' +
+'            <tr>\n' +
+'              <td><code>base_url</code></td>\n' +
+'              <td>Yes</td>\n' +
+'              <td>API base URL.</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>auth_header</code></td>\n' +
+'              <td>Yes</td>\n' +
+'              <td>How to pass the token (e.g., <code>Authorization: Bearer {token}</code>).</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>methods</code></td>\n' +
+'              <td>Yes</td>\n' +
+'              <td>Array of method names that produce valid tokens.</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>docs_url</code></td>\n' +
+'              <td>No</td>\n' +
+'              <td>Link to API documentation.</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>spec_url</code></td>\n' +
+'              <td>No</td>\n' +
+'              <td>Link to machine-readable spec.</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>spec_type</code></td>\n' +
+'              <td>No</td>\n' +
+'              <td>Type of spec: <code>openapi</code>, <code>graphql</code>, <code>asyncapi</code>.</td>\n' +
+'            </tr>\n' +
+'          </tbody>\n' +
+'        </table>\n' +
+'\n' +
+'        <h3 class="docs-section__subtitle" id="public-clients"><a href="#public-clients">Public Clients</a></h3>\n' +
+'        <p>Clients bundled with the formula that users can use without registering their own OAuth app:</p>\n' +
+'        <table class="docs-table">\n' +
+'          <thead>\n' +
+'            <tr>\n' +
+'              <th>Field</th>\n' +
+'              <th>Required</th>\n' +
+'              <th>Description</th>\n' +
+'            </tr>\n' +
+'          </thead>\n' +
+'          <tbody>\n' +
+'            <tr>\n' +
+'              <td><code>name</code></td>\n' +
+'              <td>Yes</td>\n' +
+'              <td>Identifier for the client.</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>id</code></td>\n' +
+'              <td>Yes</td>\n' +
+'              <td>OAuth client ID.</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>secret</code></td>\n' +
+'              <td>No</td>\n' +
+'              <td>OAuth client secret (for confidential clients).</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>source</code></td>\n' +
+'              <td>No</td>\n' +
+'              <td>URL where this client ID was found.</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>methods</code></td>\n' +
+'              <td>No</td>\n' +
+'              <td>Which methods this client supports (default: all OAuth methods).</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>redirect_uri</code></td>\n' +
+'              <td>No</td>\n' +
+'              <td>Fixed redirect URI required by this client.</td>\n' +
+'            </tr>\n' +
+'          </tbody>\n' +
+'        </table>\n' +
+'\n' +
+'        <h3 class="docs-section__subtitle" id="storage-keys"><a href="#storage-keys">Storage Keys</a></h3>\n' +
+'        <p>Tokens are stored using a conventional key format:</p>\n' +
+'        <pre><code>{formula_id}:{method}:{identity}</code></pre>\n' +
+'        <p>Examples:</p>\n' +
+'        <ul>\n' +
+'          <li><code>github:device_code:personal</code> - GitHub device code token for "personal" identity</li>\n' +
+'          <li><code>linear:authorization_code:acme</code> - Linear OAuth token for "acme" workspace</li>\n' +
+'          <li><code>stripe:api_key</code> - Stripe API key (no identity)</li>\n' +
+'        </ul>\n' +
+'\n' +
+'        <h3 class="docs-section__subtitle" id="example-formula"><a href="#example-formula">Example Formula</a></h3>\n' +
+'        <pre><code>{\n' +
+'  "schema": "v2",\n' +
+'  "id": "github",\n' +
+'  "label": "GitHub",\n' +
+'  "description": "Authenticate with GitHub using OAuth device code flow...",\n' +
+'  "apis": {\n' +
+'    "rest": {\n' +
+'      "base_url": "https://api.github.com",\n' +
+'      "auth_header": "Authorization: Bearer {token}",\n' +
+'      "docs_url": "https://docs.github.com/en/rest",\n' +
+'      "spec_type": "openapi"\n' +
+'    }\n' +
+'  },\n' +
+'  "clients": [\n' +
+'    {\n' +
+'      "name": "gh-cli",\n' +
+'      "id": "178c6fc778ccc68e1d6a",\n' +
+'      "secret": "34ddeff2b558a23d38fba...",\n' +
+'      "source": "https://github.com/cli/cli",\n' +
+'      "methods": ["device_code", "authorization_code"]\n' +
+'    }\n' +
+'  ],\n' +
+'  "identity": {\n' +
+'    "label": "Account",\n' +
+'    "hint": "e.g., personal, work"\n' +
+'  },\n' +
+'  "methods": {\n' +
+'    "device_code": {\n' +
+'      "endpoints": {\n' +
+'        "device": "https://github.com/login/device/code",\n' +
+'        "token": "https://github.com/login/oauth/access_token"\n' +
+'      },\n' +
+'      "scope": "repo read:org gist",\n' +
+'      "script": [\n' +
+'        { "type": "open_url", "value": "{verification_uri}" },\n' +
+'        { "type": "enter_code", "value": "{user_code}" },\n' +
+'        { "type": "wait_for_token" }\n' +
+'      ]\n' +
+'    },\n' +
+'    "personal_access_token": {\n' +
+'      "register": {\n' +
+'        "url": "https://github.com/settings/tokens/new",\n' +
+'        "steps": ["Generate a new token", "Copy the token"]\n' +
+'      },\n' +
+'      "script": [\n' +
+'        { "type": "copy_key", "note": "Paste your GitHub PAT" }\n' +
+'      ]\n' +
+'    }\n' +
+'  }\n' +
+'}</code></pre>\n' +
+'      </section>\n' +
+'\n' +
+'      <!-- CLI Reference -->\n' +
+'      <section class="docs-section" id="cli">\n' +
+'        <h2 class="docs-section__title"><a href="#cli">💻 CLI Reference</a></h2>\n' +
+'        <p>\n' +
+'          The Schlussel CLI is the primary interface for authenticating with providers and managing tokens.\n' +
+'        </p>\n' +
+'\n' +
+'        <h3 class="docs-section__subtitle" id="installation"><a href="#installation">Installation</a></h3>\n' +
+'        <pre><code># Using mise (recommended)\n' +
+'mise use -g github:pepicrft/schlussel\n' +
+'\n' +
+'# Or build from source\n' +
+'git clone https://github.com/pepicrft/schlussel\n' +
+'cd schlussel && zig build</code></pre>\n' +
+'\n' +
+'        <h3 class="docs-section__subtitle" id="commands"><a href="#commands">Commands</a></h3>\n' +
+'\n' +
+'        <h4 style="margin-top: var(--space-md); font-weight: 700;">schlussel run &lt;formula&gt;</h4>\n' +
+'        <p>Authenticate with a provider and obtain a token.</p>\n' +
+'        <table class="docs-table">\n' +
+'          <thead>\n' +
+'            <tr>\n' +
+'              <th>Option</th>\n' +
+'              <th>Description</th>\n' +
+'            </tr>\n' +
+'          </thead>\n' +
+'          <tbody>\n' +
+'            <tr>\n' +
+'              <td><code>-m, --method &lt;str&gt;</code></td>\n' +
+'              <td>Authentication method (required if multiple methods available).</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>-c, --client &lt;str&gt;</code></td>\n' +
+'              <td>Use a public client from the formula.</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>-r, --redirect-uri &lt;str&gt;</code></td>\n' +
+'              <td>Redirect URI for auth code flow (default: <code>http://127.0.0.1:0/callback</code>).</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>-f, --formula-json &lt;str&gt;</code></td>\n' +
+'              <td>Load a custom formula JSON file.</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>--client-id &lt;str&gt;</code></td>\n' +
+'              <td>Override OAuth client ID.</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>--client-secret &lt;str&gt;</code></td>\n' +
+'              <td>Override OAuth client secret.</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>-s, --scope &lt;str&gt;</code></td>\n' +
+'              <td>OAuth scopes (space-separated).</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>--credential &lt;str&gt;</code></td>\n' +
+'              <td>Secret for non-OAuth methods (api_key).</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>-i, --identity &lt;str&gt;</code></td>\n' +
+'              <td>Identity label for storage key (e.g., workspace name).</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>--open-browser &lt;true|false&gt;</code></td>\n' +
+'              <td>Open the authorization URL automatically (default: true).</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>-j, --json</code></td>\n' +
+'              <td>Emit machine-readable JSON output.</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>-n, --dry-run</code></td>\n' +
+'              <td>Show auth steps and URLs without executing. Useful for previewing the flow.</td>\n' +
+'            </tr>\n' +
+'          </tbody>\n' +
+'        </table>\n' +
+'\n' +
+'        <div class="docs-note">\n' +
+'          <div class="docs-note__title">Auto-selection</div>\n' +
+'          When a formula has a public client, Schlussel auto-selects it. If only one method is available, it is auto-selected too.\n' +
+'        </div>\n' +
+'\n' +
+'        <h4 style="margin-top: var(--space-md); font-weight: 700;">schlussel token &lt;action&gt;</h4>\n' +
+'        <p>Token management operations.</p>\n' +
+'        <table class="docs-table">\n' +
+'          <thead>\n' +
+'            <tr>\n' +
+'              <th>Action</th>\n' +
+'              <th>Description</th>\n' +
+'            </tr>\n' +
+'          </thead>\n' +
+'          <tbody>\n' +
+'            <tr>\n' +
+'              <td><code>get</code></td>\n' +
+'              <td>Retrieve a stored token. Requires <code>--key</code> or <code>--formula</code>.</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>list</code></td>\n' +
+'              <td>List all stored tokens. Can be filtered.</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>delete</code></td>\n' +
+'              <td>Delete a stored token. Requires <code>--key</code> or <code>--formula</code>.</td>\n' +
+'            </tr>\n' +
+'          </tbody>\n' +
+'        </table>\n' +
+'\n' +
+'        <p><strong>Options:</strong></p>\n' +
+'        <table class="docs-table">\n' +
+'          <thead>\n' +
+'            <tr>\n' +
+'              <th>Option</th>\n' +
+'              <th>Description</th>\n' +
+'            </tr>\n' +
+'          </thead>\n' +
+'          <tbody>\n' +
+'            <tr>\n' +
+'              <td><code>-k, --key &lt;str&gt;</code></td>\n' +
+'              <td>Full token storage key (e.g., <code>github:device_code:personal</code>).</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>--formula &lt;str&gt;</code></td>\n' +
+'              <td>Filter/query by formula ID (e.g., <code>github</code>).</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>--method &lt;str&gt;</code></td>\n' +
+'              <td>Filter/query by auth method (e.g., <code>device_code</code>).</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>--identity &lt;str&gt;</code></td>\n' +
+'              <td>Filter/query by identity label (e.g., <code>personal</code>).</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>--no-refresh</code></td>\n' +
+'              <td>Disable auto-refresh. By default, OAuth2 tokens are refreshed if expired or expiring soon, using cross-process locking.</td>\n' +
+'            </tr>\n' +
+'            <tr>\n' +
+'              <td><code>-j, --json</code></td>\n' +
+'              <td>Output in JSON format.</td>\n' +
+'            </tr>\n' +
+'          </tbody>\n' +
+'        </table>\n' +
+'\n' +
+'        <div class="docs-note">\n' +
+'          <div class="docs-note__title">Auto-refresh with locking</div>\n' +
+'          By default, <code>schlussel token get</code> automatically refreshes OAuth2 tokens that are expired or expiring soon. It acquires a cross-process lock before refreshing, ensuring that if multiple processes request the same token simultaneously, only one performs the refresh while others wait and receive the updated token. Use <code>--no-refresh</code> to disable this behavior.\n' +
+'        </div>\n' +
+'\n' +
+'        <h3 class="docs-section__subtitle" id="examples"><a href="#examples">Examples</a></h3>\n' +
+'        <pre><code># Authenticate with GitHub (auto-selects public client and method)\n' +
+'schlussel run github\n' +
+'\n' +
+'# Preview auth flow without executing\n' +
+'schlussel run github --dry-run\n' +
+'\n' +
+'# Authenticate with a specific method\n' +
+'schlussel run github --method device_code\n' +
+'\n' +
+'# Use a specific public client\n' +
+'schlussel run github --client gh-cli\n' +
+'\n' +
+'# Authenticate with Linear for a specific workspace\n' +
+'schlussel run linear --method authorization_code --identity acme\n' +
+'\n' +
+'# Use a custom formula file\n' +
+'schlussel run acme --formula-json ~/formulas/acme.json\n' +
+'\n' +
+'# Get JSON output for scripting\n' +
+'schlussel run github --json\n' +
+'\n' +
+'# List all tokens\n' +
+'schlussel token list\n' +
+'\n' +
+'# List tokens for a specific formula\n' +
+'schlussel token list --formula github\n' +
+'\n' +
+'# Get token using key components (auto-refreshes if expiring)\n' +
+'schlussel token get --formula github --method device_code\n' +
+'\n' +
+'# Get token without auto-refresh\n' +
+'schlussel token get --formula github --method device_code --no-refresh\n' +
+'\n' +
+'# Get token as JSON\n' +
+'schlussel token get --formula github --method device_code --json\n' +
+'\n' +
+'# Delete a token\n' +
+'schlussel token delete --key github:device_code:personal</code></pre>\n' +
+'      </section>\n' +
+'    </div>\n' +
+'  </main>\n' +
+'\n' +
+'  <footer class="footer">\n' +
+'    <div class="container">\n' +
+'      <p>\n' +
+'        Made with love by <a href="https://pepicrft.me">Pedro Pinera</a>.\n' +
+'        Licensed under MIT.\n' +
+'      </p>\n' +
+'    </div>\n' +
+'  </footer>\n' +
+'  <script>\n' +
+'    // Mobile nav toggle\n' +
+'    const navToggle = document.querySelector(".nav__toggle");\n' +
+'    const navLinks = document.querySelector(".nav__links");\n' +
+'    navToggle.addEventListener("click", () => {\n' +
+'      navToggle.classList.toggle("active");\n' +
+'      navLinks.classList.toggle("open");\n' +
 '    });\n' +
 '  </script>\n' +
 '</body>\n' +
