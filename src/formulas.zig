@@ -218,20 +218,23 @@ pub const Formula = struct {
 // Embedded formulas
 // ============================================================================
 
-const github_json = @embedFile("formulas/github.json");
-const codex_json = @embedFile("formulas/codex.json");
-const claude_json = @embedFile("formulas/claude.json");
-const linear_json = @embedFile("formulas/linear.json");
-const cloudflare_json = @embedFile("formulas/cloudflare.json");
-const shopify_json = @embedFile("formulas/shopify.json");
-const gitlab_json = @embedFile("formulas/gitlab.json");
-const stripe_json = @embedFile("formulas/stripe.json");
+const amp_json = @embedFile("formulas/amp.json");
 const azure_json = @embedFile("formulas/azure.json");
+const claude_json = @embedFile("formulas/claude.json");
+const cloudflare_json = @embedFile("formulas/cloudflare.json");
+const codex_json = @embedFile("formulas/codex.json");
 const docker_json = @embedFile("formulas/docker.json");
+const fly_json = @embedFile("formulas/fly.json");
+const github_json = @embedFile("formulas/github.json");
+const gitlab_json = @embedFile("formulas/gitlab.json");
+const linear_json = @embedFile("formulas/linear.json");
+const openrouter_json = @embedFile("formulas/openrouter.json");
+const shopify_json = @embedFile("formulas/shopify.json");
+const stripe_json = @embedFile("formulas/stripe.json");
 const vercel_json = @embedFile("formulas/vercel.json");
 
 var builtin_formulas_loaded = false;
-var builtin_formulas: [11]FormulaOwned = undefined;
+var builtin_formulas: [14]FormulaOwned = undefined;
 
 pub fn findById(allocator: Allocator, id: []const u8) !?*const Formula {
     if (!builtin_formulas_loaded) {
@@ -245,18 +248,42 @@ pub fn findById(allocator: Allocator, id: []const u8) !?*const Formula {
     return null;
 }
 
+pub const FormulaInfo = struct {
+    id: []const u8,
+    label: []const u8,
+};
+
+pub fn listAll(allocator: Allocator) ![]FormulaInfo {
+    if (!builtin_formulas_loaded) {
+        try loadBuiltinFormulas(allocator);
+        builtin_formulas_loaded = true;
+    }
+
+    var result = try allocator.alloc(FormulaInfo, builtin_formulas.len);
+    for (builtin_formulas, 0..) |formula, idx| {
+        result[idx] = .{
+            .id = try allocator.dupe(u8, formula.formula.id),
+            .label = try allocator.dupe(u8, formula.formula.label),
+        };
+    }
+    return result;
+}
+
 fn loadBuiltinFormulas(allocator: Allocator) !void {
-    builtin_formulas[0] = try loadFromJsonSlice(allocator, github_json);
-    builtin_formulas[1] = try loadFromJsonSlice(allocator, codex_json);
+    builtin_formulas[0] = try loadFromJsonSlice(allocator, amp_json);
+    builtin_formulas[1] = try loadFromJsonSlice(allocator, azure_json);
     builtin_formulas[2] = try loadFromJsonSlice(allocator, claude_json);
-    builtin_formulas[3] = try loadFromJsonSlice(allocator, linear_json);
-    builtin_formulas[4] = try loadFromJsonSlice(allocator, cloudflare_json);
-    builtin_formulas[5] = try loadFromJsonSlice(allocator, shopify_json);
-    builtin_formulas[6] = try loadFromJsonSlice(allocator, gitlab_json);
-    builtin_formulas[7] = try loadFromJsonSlice(allocator, stripe_json);
-    builtin_formulas[8] = try loadFromJsonSlice(allocator, azure_json);
-    builtin_formulas[9] = try loadFromJsonSlice(allocator, docker_json);
-    builtin_formulas[10] = try loadFromJsonSlice(allocator, vercel_json);
+    builtin_formulas[3] = try loadFromJsonSlice(allocator, cloudflare_json);
+    builtin_formulas[4] = try loadFromJsonSlice(allocator, codex_json);
+    builtin_formulas[5] = try loadFromJsonSlice(allocator, docker_json);
+    builtin_formulas[6] = try loadFromJsonSlice(allocator, fly_json);
+    builtin_formulas[7] = try loadFromJsonSlice(allocator, github_json);
+    builtin_formulas[8] = try loadFromJsonSlice(allocator, gitlab_json);
+    builtin_formulas[9] = try loadFromJsonSlice(allocator, linear_json);
+    builtin_formulas[10] = try loadFromJsonSlice(allocator, openrouter_json);
+    builtin_formulas[11] = try loadFromJsonSlice(allocator, shopify_json);
+    builtin_formulas[12] = try loadFromJsonSlice(allocator, stripe_json);
+    builtin_formulas[13] = try loadFromJsonSlice(allocator, vercel_json);
 }
 
 pub fn deinitBuiltinFormulas() void {

@@ -437,24 +437,12 @@ const run_params = clap.parseParamsComptime(
     \\
 );
 
-const info_params = clap.parseParamsComptime(
+const formula_params = clap.parseParamsComptime(
     \\-h, --help                      Display this help and exit.
     \\-f, --formula-json <str>        Load a declarative formula JSON.
     \\-j, --json                      Output as JSON.
-    \\<str>                           Provider name.
-    \\
-);
-
-const script_params = clap.parseParamsComptime(
-    \\-h, --help                      Display this help and exit.
-    \\-f, --formula-json <str>        Load a declarative formula JSON.
-    \\-m, --method <str>              Filter to a single method.
-    \\    --client-id <str>           OAuth client ID override.
-    \\    --client-secret <str>       OAuth client secret override.
-    \\-s, --scope <str>               OAuth scopes (space-separated).
-    \\-r, --redirect-uri <str>        Redirect URI (default: http://127.0.0.1:0/callback).
-    \\    --resolve                   Resolve placeholders into a script context.
-    \\<str>                           Provider name.
+    \\<str>                           Action (list, show).
+    \\<str>                           Formula name (for show).
     \\
 );
 
@@ -470,31 +458,6 @@ const token_params = clap.parseParamsComptime(
     \\
 );
 
-const register_params = clap.parseParamsComptime(
-    \\-h, --help                        Display this help and exit.
-    \\-n, --client-name <str>           Client name (required).
-    \\-r, --redirect-uri <str>...       Redirect URI (can be specified multiple times).
-    \\-g, --grant-types <str>           Comma-separated grant types.
-    \\    --response-types <str>        Comma-separated response types.
-    \\-a, --token-endpoint-auth <str>   Token endpoint auth method.
-    \\-t, --initial-access-token <str>  Initial access token for protected registration.
-    \\<str>                             Registration endpoint URL.
-    \\
-);
-
-const register_read_params = clap.parseParamsComptime(
-    \\-h, --help                          Display this help and exit.
-    \\-t, --registration-access-token <str>  Registration access token (required).
-    \\<str>                               Registration client URI.
-    \\
-);
-
-const register_delete_params = clap.parseParamsComptime(
-    \\-h, --help                          Display this help and exit.
-    \\-t, --registration-access-token <str>  Registration access token (required).
-    \\<str>                               Registration client URI.
-    \\
-);
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -532,18 +495,10 @@ pub fn main() !void {
 
     if (std.mem.eql(u8, command, "run")) {
         try cmdRun(allocator, args[2..], stdout, stderr);
-    } else if (std.mem.eql(u8, command, "info")) {
-        try cmdInfo(allocator, args[2..], stdout, stderr);
-    } else if (std.mem.eql(u8, command, "script")) {
-        try cmdScript(allocator, args[2..], stdout, stderr);
+    } else if (std.mem.eql(u8, command, "formula")) {
+        try cmdFormula(allocator, args[2..], stdout, stderr);
     } else if (std.mem.eql(u8, command, "token")) {
         try cmdToken(allocator, args[2..], stdout, stderr);
-    } else if (std.mem.eql(u8, command, "register")) {
-        try cmdRegister(allocator, args[2..], stdout, stderr);
-    } else if (std.mem.eql(u8, command, "register-read")) {
-        try cmdRegisterRead(allocator, args[2..], stdout, stderr);
-    } else if (std.mem.eql(u8, command, "register-delete")) {
-        try cmdRegisterDelete(allocator, args[2..], stdout, stderr);
     } else {
         try stderr.print("Error: Unknown command '{s}'\n\n", .{command});
         try printMainUsage(stderr);
@@ -560,34 +515,25 @@ fn printMainUsage(writer: anytype) !void {
         \\
         \\COMMANDS:
         \\    run                 Authenticate with a provider
-        \\    info                Show provider information (methods, APIs)
-        \\    script              Generate authentication script
-        \\    token <action>      Token management operations
-        \\    register            Dynamically register OAuth client
-        \\    register-read       Read dynamic client configuration
-        \\    register-delete     Delete dynamic client registration
+        \\    formula <action>    Formula operations (list, show)
+        \\    token <action>      Token management (get, list, delete)
         \\    help                Show this help message
         \\
-        \\TOKEN ACTIONS:
-        \\    get                 Retrieve a stored token
-        \\    list                List all stored tokens
-        \\    delete              Delete a stored token
-        \\
         \\EXAMPLES:
+        \\    # List available formulas
+        \\    schlussel formula list
+        \\
+        \\    # Show details for a formula
+        \\    schlussel formula show github
+        \\
         \\    # Authenticate with GitHub using device code flow
         \\    schlussel run github --method device_code
-        \\
-        \\    # Use a public client (e.g., gh-cli)
-        \\    schlussel run github --client gh-cli
         \\
         \\    # Authenticate with Linear using OAuth
         \\    schlussel run linear --method oauth --identity acme
         \\
-        \\    # Show available methods for a provider
-        \\    schlussel info github
-        \\
-        \\    # Use a custom formula
-        \\    schlussel run acme --formula-json ~/formulas/acme.json --method oauth
+        \\    # Get a stored token
+        \\    schlussel token get --formula github --method device_code
         \\
         \\For more help, visit: https://github.com/pepicrft/schlussel
         \\
@@ -1105,10 +1051,10 @@ fn cmdRun(allocator: Allocator, args: []const []const u8, stdout: anytype, stder
     }
 }
 
-fn cmdInfo(allocator: Allocator, args: []const []const u8, stdout: anytype, stderr: anytype) !void {
+fn cmdFormula(allocator: Allocator, args: []const []const u8, stdout: anytype, stderr: anytype) !void {
     var diag: clap.Diagnostic = .{};
     var iter = clap.args.SliceIterator{ .args = args };
-    var res = clap.parseEx(clap.Help, &info_params, clap.parsers.default, &iter, .{
+    var res = clap.parseEx(clap.Help, &formula_params, clap.parsers.default, &iter, .{
         .diagnostic = &diag,
         .allocator = allocator,
     }) catch |err| {
@@ -1118,266 +1064,170 @@ fn cmdInfo(allocator: Allocator, args: []const []const u8, stdout: anytype, stde
     defer res.deinit();
 
     if (res.args.help != 0) {
-        try clap.help(stdout, clap.Help, &info_params, .{});
+        try clap.help(stdout, clap.Help, &formula_params, .{});
         return;
     }
 
-    const provider_arg = if (res.positionals.len > 0) res.positionals[0].? else {
-        try stderr.print("Error: Missing provider name\n\n", .{});
-        try clap.help(stderr, clap.Help, &info_params, .{});
+    const action = if (res.positionals.len > 0) res.positionals[0] orelse {
+        try stderr.print("Error: Missing action (list, show)\n\n", .{});
+        try clap.help(stderr, clap.Help, &formula_params, .{});
+        return error.MissingArguments;
+    } else {
+        try stderr.print("Error: Missing action (list, show)\n\n", .{});
+        try clap.help(stderr, clap.Help, &formula_params, .{});
         return error.MissingArguments;
     };
 
     const json_output = res.args.json != 0;
 
-    var thirdPartyFormula: ?formulas.FormulaOwned = null;
-    defer if (thirdPartyFormula) |*owner| owner.deinit();
-
-    var formula_ptr: ?*const formulas.Formula = null;
-    if (res.args.@"formula-json") |path| {
-        thirdPartyFormula = try formulas.loadFromPath(allocator, path);
-        formula_ptr = thirdPartyFormula.?.asConst();
-    } else {
-        formula_ptr = try formulas.findById(allocator, provider_arg);
-    }
-
-    const formula = formula_ptr orelse {
-        try stderr.print("Error: Unknown provider '{s}'\n", .{provider_arg});
-        return error.UnknownProvider;
-    };
-
-    if (json_output) {
-        // Output structured JSON
-        try stdout.print("{{\n", .{});
-        try stdout.print("  \"id\": \"{s}\",\n", .{formula.id});
-        try stdout.print("  \"label\": \"{s}\",\n", .{formula.label});
-
-        // Methods
-        try stdout.print("  \"methods\": [\n", .{});
-        for (formula.methods, 0..) |method, idx| {
-            try stdout.print("    {{\n", .{});
-            try stdout.print("      \"name\": \"{s}\"", .{method.name});
-            if (method.label) |label| {
-                try stdout.print(",\n      \"label\": \"{s}\"", .{label});
+    if (std.mem.eql(u8, action, "list")) {
+        // List all available formulas
+        const formula_list = try formulas.listAll(allocator);
+        defer {
+            for (formula_list) |f| {
+                allocator.free(f.id);
+                allocator.free(f.label);
             }
-            if (method.isDeviceCode()) {
-                try stdout.print(",\n      \"type\": \"device_code\"", .{});
-            } else if (method.isAuthorizationCode()) {
-                try stdout.print(",\n      \"type\": \"authorization_code\"", .{});
-            } else {
-                try stdout.print(",\n      \"type\": \"api_key\"", .{});
-            }
-            try stdout.print("\n    }}", .{});
-            if (idx < formula.methods.len - 1) try stdout.print(",", .{});
-            try stdout.print("\n", .{});
-        }
-        try stdout.print("  ],\n", .{});
-
-        // APIs
-        try stdout.print("  \"apis\": [\n", .{});
-        for (formula.apis, 0..) |api, idx| {
-            try stdout.print("    {{\n", .{});
-            try stdout.print("      \"name\": \"{s}\",\n", .{api.name});
-            try stdout.print("      \"base_url\": \"{s}\",\n", .{api.base_url});
-            try stdout.print("      \"methods\": [", .{});
-            for (api.methods, 0..) |m, midx| {
-                try stdout.print("\"{s}\"", .{m});
-                if (midx < api.methods.len - 1) try stdout.print(", ", .{});
-            }
-            try stdout.print("]\n    }}", .{});
-            if (idx < formula.apis.len - 1) try stdout.print(",", .{});
-            try stdout.print("\n", .{});
-        }
-        try stdout.print("  ]\n", .{});
-        try stdout.print("}}\n", .{});
-    } else {
-        // Human-readable output
-        try stdout.print("\n{s}\n", .{formula.label});
-        try stdout.print("ID: {s}\n\n", .{formula.id});
-
-        if (formula.identity) |identity| {
-            if (identity.label) |label| {
-                try stdout.print("Identity: {s}", .{label});
-                if (identity.hint) |hint| {
-                    try stdout.print(" ({s})", .{hint});
-                }
-                try stdout.print("\n\n", .{});
-            }
+            allocator.free(formula_list);
         }
 
-        try stdout.print("Methods:\n", .{});
-        for (formula.methods) |method| {
-            const label = method.label orelse method.name;
-            try stdout.print("  - {s}", .{label});
-            if (method.isDeviceCode()) {
-                try stdout.print(" (device code)", .{});
-            } else if (method.isAuthorizationCode()) {
-                try stdout.print(" (authorization code)", .{});
-            } else {
-                try stdout.print(" (manual)", .{});
-            }
-            try stdout.print("\n", .{});
-        }
-
-        try stdout.print("\nAPIs:\n", .{});
-        for (formula.apis) |api| {
-            try stdout.print("  - {s}: {s}\n", .{ api.name, api.base_url });
-            try stdout.print("    Methods: ", .{});
-            for (api.methods, 0..) |m, idx| {
-                if (idx > 0) try stdout.print(", ", .{});
-                try stdout.print("{s}", .{m});
-            }
-            try stdout.print("\n", .{});
-        }
-
-        if (formula.clients) |clients| {
-            try stdout.print("\nPublic Clients:\n", .{});
-            for (clients) |client| {
-                try stdout.print("  - {s}", .{client.name});
-                if (client.source) |source| {
-                    try stdout.print(" (from {s})", .{source});
-                }
+        if (json_output) {
+            try stdout.print("[\n", .{});
+            for (formula_list, 0..) |f, idx| {
+                try stdout.print("  {{\"id\": \"{s}\", \"label\": \"{s}\"}}", .{ f.id, f.label });
+                if (idx < formula_list.len - 1) try stdout.print(",", .{});
                 try stdout.print("\n", .{});
             }
+            try stdout.print("]\n", .{});
+        } else {
+            try stdout.print("Available formulas:\n", .{});
+            for (formula_list) |f| {
+                try stdout.print("  {s} - {s}\n", .{ f.id, f.label });
+            }
         }
-    }
-}
+    } else if (std.mem.eql(u8, action, "show")) {
+        const provider_arg = if (res.positionals.len > 1) res.positionals[1] orelse {
+            try stderr.print("Error: Missing formula name\n", .{});
+            return error.MissingArguments;
+        } else {
+            try stderr.print("Error: Missing formula name\n", .{});
+            return error.MissingArguments;
+        };
 
-fn cmdScript(allocator: Allocator, args: []const []const u8, stdout: anytype, stderr: anytype) !void {
-    var diag: clap.Diagnostic = .{};
-    var iter = clap.args.SliceIterator{ .args = args };
-    var res = clap.parseEx(clap.Help, &script_params, clap.parsers.default, &iter, .{
-        .diagnostic = &diag,
-        .allocator = allocator,
-    }) catch |err| {
-        diag.report(stderr, err) catch {};
-        return err;
-    };
-    defer res.deinit();
+        var thirdPartyFormula: ?formulas.FormulaOwned = null;
+        defer if (thirdPartyFormula) |*owner| owner.deinit();
 
-    if (res.args.help != 0) {
-        try clap.help(stdout, clap.Help, &script_params, .{});
-        return;
-    }
-
-    const provider_arg = if (res.positionals.len > 0) res.positionals[0].? else {
-        try stderr.print("Error: Missing provider name\n\n", .{});
-        try clap.help(stderr, clap.Help, &script_params, .{});
-        return error.MissingArguments;
-    };
-
-    const client_id_override = res.args.@"client-id";
-    const client_secret_override = res.args.@"client-secret";
-    const scope_override = res.args.scope;
-    const redirect_uri = res.args.@"redirect-uri" orelse "http://127.0.0.1:0/callback";
-    const resolve_script = res.args.resolve != 0;
-
-    var thirdPartyFormula: ?formulas.FormulaOwned = null;
-    defer if (thirdPartyFormula) |*owner| owner.deinit();
-
-    var formula_ptr: ?*const formulas.Formula = null;
-    if (res.args.@"formula-json") |path| {
-        thirdPartyFormula = try formulas.loadFromPath(allocator, path);
-        const owner = thirdPartyFormula.?;
-        if (!std.mem.eql(u8, owner.formula.id, provider_arg)) {
-            try stderr.print(
-                "Warning: formula id '{s}' does not match provider '{s}'\n",
-                .{ owner.formula.id, provider_arg },
-            );
+        var formula_ptr: ?*const formulas.Formula = null;
+        if (res.args.@"formula-json") |path| {
+            thirdPartyFormula = try formulas.loadFromPath(allocator, path);
+            formula_ptr = thirdPartyFormula.?.asConst();
+        } else {
+            formula_ptr = try formulas.findById(allocator, provider_arg);
         }
-        formula_ptr = owner.asConst();
-    } else {
-        formula_ptr = try formulas.findById(allocator, provider_arg);
-    }
 
-    const formula = formula_ptr orelse {
-        try stderr.print("Error: Unknown provider '{s}'\n", .{provider_arg});
-        return error.UnknownProvider;
-    };
+        const formula = formula_ptr orelse {
+            try stderr.print("Error: Unknown formula '{s}'\n", .{provider_arg});
+            return error.UnknownProvider;
+        };
 
-    // Determine which method to use
-    var method_name: []const u8 = undefined;
-    if (res.args.method) |m| {
-        if (formula.getMethod(m) == null) {
-            try stderr.print("Error: Unknown method '{s}'\n", .{m});
-            return error.InvalidMethod;
-        }
-        method_name = m;
-    } else if (formula.methods.len == 1) {
-        method_name = formula.methods[0].name;
-    } else {
-        try stderr.print("Error: --method is required when multiple methods are available\n", .{});
-        try stderr.print("Available methods: ", .{});
-        for (formula.methods, 0..) |method, idx| {
-            if (idx > 0) try stderr.print(", ", .{});
-            try stderr.print("{s}", .{method.name});
-        }
-        try stderr.print("\n", .{});
-        return error.MissingArguments;
-    }
+        if (json_output) {
+            // Output structured JSON
+            try stdout.print("{{\n", .{});
+            try stdout.print("  \"id\": \"{s}\",\n", .{formula.id});
+            try stdout.print("  \"label\": \"{s}\",\n", .{formula.label});
 
-    if (resolve_script) {
-        var resolved = try resolveScriptSteps(
-            allocator,
-            formula,
-            method_name,
-            client_id_override,
-            client_secret_override,
-            scope_override,
-            redirect_uri,
-        );
-        defer resolved.deinit();
+            // Methods
+            try stdout.print("  \"methods\": [\n", .{});
+            for (formula.methods, 0..) |method, idx| {
+                try stdout.print("    {{\n", .{});
+                try stdout.print("      \"name\": \"{s}\"", .{method.name});
+                if (method.label) |label| {
+                    try stdout.print(",\n      \"label\": \"{s}\"", .{label});
+                }
+                if (method.isDeviceCode()) {
+                    try stdout.print(",\n      \"type\": \"device_code\"", .{});
+                } else if (method.isAuthorizationCode()) {
+                    try stdout.print(",\n      \"type\": \"authorization_code\"", .{});
+                } else {
+                    try stdout.print(",\n      \"type\": \"api_key\"", .{});
+                }
+                try stdout.print("\n    }}", .{});
+                if (idx < formula.methods.len - 1) try stdout.print(",", .{});
+                try stdout.print("\n", .{});
+            }
+            try stdout.print("  ],\n", .{});
 
-        // Output resolved script as JSON
-        try stdout.print("{{\n", .{});
-        try stdout.print("  \"id\": \"{s}\",\n", .{formula.id});
-        try stdout.print("  \"method\": \"{s}\",\n", .{method_name});
-        try stdout.print("  \"steps\": [\n", .{});
-        for (resolved.steps, 0..) |step, idx| {
-            try stdout.print("    {{ \"type\": \"{s}\"", .{step.type});
-            if (step.value) |v| try stdout.print(", \"value\": \"{s}\"", .{v});
-            if (step.note) |n| try stdout.print(", \"note\": \"{s}\"", .{n});
-            try stdout.print(" }}", .{});
-            if (idx < resolved.steps.len - 1) try stdout.print(",", .{});
-            try stdout.print("\n", .{});
-        }
-        try stdout.print("  ],\n", .{});
-        try stdout.print("  \"context\": {{\n", .{});
-        if (resolved.context.authorize_url) |v| try stdout.print("    \"authorize_url\": \"{s}\",\n", .{v});
-        if (resolved.context.pkce_verifier) |v| try stdout.print("    \"pkce_verifier\": \"{s}\",\n", .{v});
-        if (resolved.context.state) |v| try stdout.print("    \"state\": \"{s}\",\n", .{v});
-        if (resolved.context.redirect_uri) |v| try stdout.print("    \"redirect_uri\": \"{s}\",\n", .{v});
-        if (resolved.context.device_code) |v| try stdout.print("    \"device_code\": \"{s}\",\n", .{v});
-        if (resolved.context.user_code) |v| try stdout.print("    \"user_code\": \"{s}\",\n", .{v});
-        if (resolved.context.verification_uri) |v| try stdout.print("    \"verification_uri\": \"{s}\",\n", .{v});
-        if (resolved.context.verification_uri_complete) |v| try stdout.print("    \"verification_uri_complete\": \"{s}\",\n", .{v});
-        if (resolved.context.interval) |v| try stdout.print("    \"interval\": {d},\n", .{v});
-        if (resolved.context.expires_in) |v| try stdout.print("    \"expires_in\": {d},\n", .{v});
-        try stdout.print("    \"_\": null\n", .{});
-        try stdout.print("  }}\n", .{});
-        try stdout.print("}}\n", .{});
-    } else {
-        // Output formula info
-        const method = formula.getMethod(method_name).?;
-        try stdout.print("{{\n", .{});
-        try stdout.print("  \"id\": \"{s}\",\n", .{formula.id});
-        try stdout.print("  \"label\": \"{s}\",\n", .{formula.label});
-        try stdout.print("  \"method\": \"{s}\",\n", .{method_name});
-        if (method.script) |script| {
-            try stdout.print("  \"script\": [\n", .{});
-            for (script, 0..) |step, idx| {
-                try stdout.print("    {{ \"type\": \"{s}\"", .{step.type});
-                if (step.value) |v| try stdout.print(", \"value\": \"{s}\"", .{v});
-                if (step.note) |n| try stdout.print(", \"note\": \"{s}\"", .{n});
-                try stdout.print(" }}", .{});
-                if (idx < script.len - 1) try stdout.print(",", .{});
+            // APIs
+            try stdout.print("  \"apis\": [\n", .{});
+            for (formula.apis, 0..) |api, idx| {
+                try stdout.print("    {{\n", .{});
+                try stdout.print("      \"name\": \"{s}\",\n", .{api.name});
+                try stdout.print("      \"base_url\": \"{s}\",\n", .{api.base_url});
+                try stdout.print("      \"methods\": [", .{});
+                for (api.methods, 0..) |m, midx| {
+                    try stdout.print("\"{s}\"", .{m});
+                    if (midx < api.methods.len - 1) try stdout.print(", ", .{});
+                }
+                try stdout.print("]\n    }}", .{});
+                if (idx < formula.apis.len - 1) try stdout.print(",", .{});
                 try stdout.print("\n", .{});
             }
             try stdout.print("  ]\n", .{});
+            try stdout.print("}}\n", .{});
         } else {
-            try stdout.print("  \"script\": null\n", .{});
+            // Human-readable output
+            try stdout.print("\n{s}\n", .{formula.label});
+            try stdout.print("ID: {s}\n\n", .{formula.id});
+
+            if (formula.identity) |identity| {
+                if (identity.label) |label| {
+                    try stdout.print("Identity: {s}", .{label});
+                    if (identity.hint) |hint| {
+                        try stdout.print(" ({s})", .{hint});
+                    }
+                    try stdout.print("\n\n", .{});
+                }
+            }
+
+            try stdout.print("Methods:\n", .{});
+            for (formula.methods) |method| {
+                const label = method.label orelse method.name;
+                try stdout.print("  - {s}", .{label});
+                if (method.isDeviceCode()) {
+                    try stdout.print(" (device code)", .{});
+                } else if (method.isAuthorizationCode()) {
+                    try stdout.print(" (authorization code)", .{});
+                } else {
+                    try stdout.print(" (manual)", .{});
+                }
+                try stdout.print("\n", .{});
+            }
+
+            try stdout.print("\nAPIs:\n", .{});
+            for (formula.apis) |api| {
+                try stdout.print("  - {s}: {s}\n", .{ api.name, api.base_url });
+                try stdout.print("    Methods: ", .{});
+                for (api.methods, 0..) |m, idx| {
+                    if (idx > 0) try stdout.print(", ", .{});
+                    try stdout.print("{s}", .{m});
+                }
+                try stdout.print("\n", .{});
+            }
+
+            if (formula.clients) |clients| {
+                try stdout.print("\nPublic Clients:\n", .{});
+                for (clients) |client| {
+                    try stdout.print("  - {s}", .{client.name});
+                    if (client.source) |source| {
+                        try stdout.print(" (from {s})", .{source});
+                    }
+                    try stdout.print("\n", .{});
+                }
+            }
         }
-        try stdout.print("}}\n", .{});
+    } else {
+        try stderr.print("Error: Unknown action '{s}'. Use: list, show\n", .{action});
+        return error.InvalidParameter;
     }
 }
 
@@ -1751,165 +1601,6 @@ fn cmdToken(allocator: Allocator, args: []const []const u8, stdout: anytype, std
         try stderr.print("Error: Unknown action '{s}'. Use: get, list, delete\n", .{action});
         return error.InvalidParameter;
     }
-}
-
-fn cmdRegister(allocator: Allocator, args: []const []const u8, stdout: anytype, stderr: anytype) !void {
-    var diag: clap.Diagnostic = .{};
-    var iter = clap.args.SliceIterator{ .args = args };
-    var res = clap.parseEx(clap.Help, &register_params, clap.parsers.default, &iter, .{
-        .diagnostic = &diag,
-        .allocator = allocator,
-    }) catch |err| {
-        diag.report(stderr, err) catch {};
-        return err;
-    };
-    defer res.deinit();
-
-    if (res.args.help != 0) {
-        try clap.help(stdout, clap.Help, &register_params, .{});
-        return;
-    }
-
-    const endpoint = if (res.positionals.len > 0) res.positionals[0].? else {
-        try stderr.print("Error: Missing registration endpoint URL\n\n", .{});
-        try clap.help(stderr, clap.Help, &register_params, .{});
-        return error.MissingArguments;
-    };
-
-    const client_name = res.args.@"client-name" orelse {
-        try stderr.print("Error: --client-name is required\n", .{});
-        return error.MissingRequiredOptions;
-    };
-
-    // Parse grant types
-    var grant_types_list: std.ArrayList([]const u8) = .empty;
-    defer grant_types_list.deinit(allocator);
-    if (res.args.@"grant-types") |gt| {
-        var gt_iter = std.mem.splitScalar(u8, gt, ',');
-        while (gt_iter.next()) |item| {
-            try grant_types_list.append(allocator, item);
-        }
-    }
-
-    // Parse response types
-    var response_types_list: std.ArrayList([]const u8) = .empty;
-    defer response_types_list.deinit(allocator);
-    if (res.args.@"response-types") |rt| {
-        var rt_iter = std.mem.splitScalar(u8, rt, ',');
-        while (rt_iter.next()) |item| {
-            try response_types_list.append(allocator, item);
-        }
-    }
-
-    var reg = try registration.DynamicRegistration.init(allocator, endpoint);
-    defer reg.deinit();
-
-    const metadata = registration.ClientMetadata{
-        .allocator = allocator,
-        .client_name = client_name,
-        .redirect_uris = if (res.args.@"redirect-uri".len > 0) res.args.@"redirect-uri" else &.{},
-        .grant_types = if (grant_types_list.items.len > 0) grant_types_list.items else &.{},
-        .response_types = if (response_types_list.items.len > 0) response_types_list.items else &.{},
-        .token_endpoint_auth_method = res.args.@"token-endpoint-auth",
-    };
-
-    // TODO: Use initial_access_token for protected registration (not yet supported by the API)
-    if (res.args.@"initial-access-token") |_| {
-        try stderr.print("Warning: --initial-access-token is not yet supported\n", .{});
-    }
-
-    var response = try reg.register(metadata);
-    defer response.deinit();
-
-    try stdout.print("Client registered successfully!\n\n", .{});
-    try stdout.print("Client ID: {s}\n", .{response.client_id});
-    if (response.client_secret) |secret| {
-        try stdout.print("Client Secret: {s}\n", .{secret});
-    }
-    if (response.registration_client_uri) |uri| {
-        try stdout.print("Registration URI: {s}\n", .{uri});
-    }
-    if (response.registration_access_token) |token| {
-        try stdout.print("Registration Access Token: {s}\n", .{token});
-    }
-}
-
-fn cmdRegisterRead(allocator: Allocator, args: []const []const u8, stdout: anytype, stderr: anytype) !void {
-    var diag: clap.Diagnostic = .{};
-    var iter = clap.args.SliceIterator{ .args = args };
-    var res = clap.parseEx(clap.Help, &register_read_params, clap.parsers.default, &iter, .{
-        .diagnostic = &diag,
-        .allocator = allocator,
-    }) catch |err| {
-        diag.report(stderr, err) catch {};
-        return err;
-    };
-    defer res.deinit();
-
-    if (res.args.help != 0) {
-        try clap.help(stdout, clap.Help, &register_read_params, .{});
-        return;
-    }
-
-    const uri = if (res.positionals.len > 0) res.positionals[0].? else {
-        try stderr.print("Error: Missing registration client URI\n\n", .{});
-        try clap.help(stderr, clap.Help, &register_read_params, .{});
-        return error.MissingArguments;
-    };
-
-    const token = res.args.@"registration-access-token" orelse {
-        try stderr.print("Error: --registration-access-token is required\n", .{});
-        return error.MissingRequiredOptions;
-    };
-
-    var reg = try registration.DynamicRegistration.init(allocator, uri);
-    defer reg.deinit();
-
-    var response = try reg.read(token);
-    defer response.deinit();
-
-    try stdout.print("Client ID: {s}\n", .{response.client_id});
-    if (response.client_secret) |secret| {
-        try stdout.print("Client Secret: {s}\n", .{secret});
-    }
-    if (response.registration_client_uri) |uri_val| {
-        try stdout.print("Registration URI: {s}\n", .{uri_val});
-    }
-}
-
-fn cmdRegisterDelete(allocator: Allocator, args: []const []const u8, stdout: anytype, stderr: anytype) !void {
-    var diag: clap.Diagnostic = .{};
-    var iter = clap.args.SliceIterator{ .args = args };
-    var res = clap.parseEx(clap.Help, &register_delete_params, clap.parsers.default, &iter, .{
-        .diagnostic = &diag,
-        .allocator = allocator,
-    }) catch |err| {
-        diag.report(stderr, err) catch {};
-        return err;
-    };
-    defer res.deinit();
-
-    if (res.args.help != 0) {
-        try clap.help(stdout, clap.Help, &register_delete_params, .{});
-        return;
-    }
-
-    const uri = if (res.positionals.len > 0) res.positionals[0].? else {
-        try stderr.print("Error: Missing registration client URI\n\n", .{});
-        try clap.help(stderr, clap.Help, &register_delete_params, .{});
-        return error.MissingArguments;
-    };
-
-    const token = res.args.@"registration-access-token" orelse {
-        try stderr.print("Error: --registration-access-token is required\n", .{});
-        return error.MissingRequiredOptions;
-    };
-
-    var reg = try registration.DynamicRegistration.init(allocator, uri);
-    defer reg.deinit();
-
-    try reg.delete(token);
-    try stdout.print("Client registration deleted successfully\n", .{});
 }
 
 // Tests
