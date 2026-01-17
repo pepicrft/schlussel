@@ -64,13 +64,17 @@ const ResolvedScript = struct {
     }
 };
 
+const ScriptOutputScript = struct {
+    register: ?formulas.ScriptRegister,
+    steps: []const formulas.ScriptStep,
+};
+
 const ScriptOutput = struct {
     id: []const u8,
     label: []const u8,
-    methods: []const formulas.Method,
-    script: ?formulas.Script,
-    storage: ?formulas.StorageHints,
-    method: ?formulas.Method,
+    method_names: []const []const u8,
+    script: ?ScriptOutputScript,
+    method: ?[]const u8,
     context: ?ScriptContext,
 };
 
@@ -679,12 +683,21 @@ export fn schlussel_script_from_formula_json(formula_json: [*c]const u8) ?[*:0]u
     };
     defer owned.deinit();
 
+    // Collect method names for output
+    var method_names = allocator.alloc([]const u8, owned.formula.methods.len) catch |err| {
+        setLastError(err);
+        return null;
+    };
+    defer allocator.free(method_names);
+    for (owned.formula.methods, 0..) |m, i| {
+        method_names[i] = m.name;
+    }
+
     const output = ScriptOutput{
         .id = owned.formula.id,
         .label = owned.formula.label,
-        .methods = owned.formula.methods,
-        .script = owned.formula.script,
-        .storage = owned.formula.storage,
+        .method_names = method_names,
+        .script = null,
         .method = null,
         .context = null,
     };
@@ -722,7 +735,10 @@ export fn schlussel_script_resolve_from_formula_json(
     };
     defer owned.deinit();
 
-    const parsed_method = formulas.methodFromString(std.mem.span(method)) orelse {
+    const method_name = std.mem.span(method);
+
+    // Validate that the method exists in the formula
+    const method_def = owned.formula.getMethod(method_name) orelse {
         setLastError(error.InvalidParameter);
         return null;
     };
@@ -730,7 +746,8 @@ export fn schlussel_script_resolve_from_formula_json(
     var resolved = resolveScriptFromFormula(
         allocator,
         owned.asConst(),
-        parsed_method,
+        method_name,
+        method_def,
         if (client_id != null) std.mem.span(client_id) else null,
         if (client_secret != null) std.mem.span(client_secret) else null,
         if (scope != null) std.mem.span(scope) else null,
@@ -741,16 +758,25 @@ export fn schlussel_script_resolve_from_formula_json(
     };
     defer resolved.deinit();
 
+    // Collect method names for output
+    var method_names = allocator.alloc([]const u8, owned.formula.methods.len) catch |err| {
+        setLastError(err);
+        return null;
+    };
+    defer allocator.free(method_names);
+    for (owned.formula.methods, 0..) |m, i| {
+        method_names[i] = m.name;
+    }
+
     const output = ScriptOutput{
         .id = owned.formula.id,
         .label = owned.formula.label,
-        .methods = owned.formula.methods,
+        .method_names = method_names,
         .script = .{
-            .register = if (owned.formula.script) |script| script.register else null,
+            .register = method_def.register,
             .steps = resolved.steps,
         },
-        .storage = owned.formula.storage,
-        .method = parsed_method,
+        .method = method_name,
         .context = resolved.context,
     };
 
@@ -799,79 +825,81 @@ export fn schlussel_run_script(client: ?*SchlusselClient, script_json: [*c]const
 
     var token: Token = undefined;
 
-    switch (method) {
-        .device_code => {
-            const device_code = context.device_code orelse {
-                setLastError(error.InvalidParameter);
-                return null;
-            };
-            const interval = context.interval orelse 5;
-            token = handle.client.pollDeviceCode(device_code, interval, context.expires_in) catch |err| {
-                setLastError(err);
-                return null;
-            };
-        },
-        .authorization_code => {
-            const authorize_url = context.authorize_url orelse {
-                setLastError(error.InvalidParameter);
-                return null;
-            };
-            const pkce_verifier = context.pkce_verifier orelse {
-                setLastError(error.InvalidParameter);
-                return null;
-            };
-            const state = context.state orelse {
-                setLastError(error.InvalidParameter);
-                return null;
-            };
-            const redirect = context.redirect_uri orelse {
-                setLastError(error.InvalidParameter);
-                return null;
-            };
+    // Determine method type from string and execute appropriate flow
+    const is_device_code = std.mem.indexOf(u8, method, "device") != null;
+    const is_authorization_code = std.mem.indexOf(u8, method, "authorization") != null or
+        std.mem.indexOf(u8, method, "oauth") != null;
 
-            const port = parseRedirectPort(redirect) catch |err| {
-                setLastError(err);
-                return null;
-            };
-            var server = callback.CallbackServer.init(allocator, port) catch |err| {
-                setLastError(err);
-                return null;
-            };
-            defer server.deinit();
-
-            callback.openBrowser(authorize_url) catch {};
-
-            var result = server.waitForCallback(120) catch |err| {
-                setLastError(err);
-                return null;
-            };
-            defer result.deinit();
-
-            if (result.state) |callback_state| {
-                if (!std.mem.eql(u8, callback_state, state)) {
-                    setLastError(error.InvalidState);
-                    return null;
-                }
-            }
-
-            if (result.error_code != null) {
-                setLastError(error.AuthorizationDenied);
-                return null;
-            }
-
-            const code = result.code orelse {
-                setLastError(error.ServerError);
-                return null;
-            };
-            token = handle.client.exchangeCode(code, pkce_verifier, redirect) catch |err| {
-                setLastError(err);
-                return null;
-            };
-        },
-        .api_key, .personal_access_token => {
-            setLastError(error.UnsupportedOperation);
+    if (is_device_code) {
+        const device_code = context.device_code orelse {
+            setLastError(error.InvalidParameter);
             return null;
-        },
+        };
+        const interval = context.interval orelse 5;
+        token = handle.client.pollDeviceCode(device_code, interval, context.expires_in) catch |err| {
+            setLastError(err);
+            return null;
+        };
+    } else if (is_authorization_code) {
+        const authorize_url = context.authorize_url orelse {
+            setLastError(error.InvalidParameter);
+            return null;
+        };
+        const pkce_verifier = context.pkce_verifier orelse {
+            setLastError(error.InvalidParameter);
+            return null;
+        };
+        const state = context.state orelse {
+            setLastError(error.InvalidParameter);
+            return null;
+        };
+        const redirect = context.redirect_uri orelse {
+            setLastError(error.InvalidParameter);
+            return null;
+        };
+
+        const port = parseRedirectPort(redirect) catch |err| {
+            setLastError(err);
+            return null;
+        };
+        var server = callback.CallbackServer.init(allocator, port) catch |err| {
+            setLastError(err);
+            return null;
+        };
+        defer server.deinit();
+
+        callback.openBrowser(authorize_url) catch {};
+
+        var result = server.waitForCallback(120) catch |err| {
+            setLastError(err);
+            return null;
+        };
+        defer result.deinit();
+
+        if (result.state) |callback_state| {
+            if (!std.mem.eql(u8, callback_state, state)) {
+                setLastError(error.InvalidState);
+                return null;
+            }
+        }
+
+        if (result.error_code != null) {
+            setLastError(error.AuthorizationDenied);
+            return null;
+        }
+
+        const code = result.code orelse {
+            setLastError(error.ServerError);
+            return null;
+        };
+        token = handle.client.exchangeCode(code, pkce_verifier, redirect) catch |err| {
+            setLastError(err);
+            return null;
+        };
+    } else {
+        // api_key or personal_access_token - not directly executable via FFI
+        setLastError(error.UnsupportedOperation);
+        return null;
     }
 
     const token_ptr = allocator.create(Token) catch |err| {
@@ -1014,7 +1042,8 @@ fn expandScriptSteps(
 fn resolveScriptFromFormula(
     allocator: Allocator,
     formula: *const formulas.Formula,
-    method: formulas.Method,
+    method_name: []const u8,
+    method_def: *const formulas.MethodDef,
     client_id_override: ?[]const u8,
     client_secret_override: ?[]const u8,
     scope_override: ?[]const u8,
@@ -1033,17 +1062,15 @@ fn resolveScriptFromFormula(
         .{ .@"type" = "copy_key", .value = null, .note = "Paste your API key into the agent." },
     };
 
-    const steps_source = if (formula.script) |script|
-        script.steps orelse switch (method) {
-            .device_code => default_device_steps[0..],
-            .authorization_code => default_code_steps[0..],
-            .api_key, .personal_access_token => default_api_key_steps[0..],
-        }
-    else switch (method) {
-        .device_code => default_device_steps[0..],
-        .authorization_code => default_code_steps[0..],
-        .api_key, .personal_access_token => default_api_key_steps[0..],
-    };
+    // Determine step source: method's script or defaults
+    const steps_source = if (method_def.script) |script|
+        script
+    else if (method_def.isDeviceCode())
+        default_device_steps[0..]
+    else if (method_def.isAuthorizationCode())
+        default_code_steps[0..]
+    else
+        default_api_key_steps[0..];
 
     var replacements: std.ArrayListUnmanaged(Replacement) = .{};
     defer replacements.deinit(allocator);
@@ -1056,108 +1083,107 @@ fn resolveScriptFromFormula(
 
     var context = ScriptContext{};
 
-    switch (method) {
-        .authorization_code => {
-            var resolved_redirect_uri = redirect_uri;
-            if (needsDynamicRedirectPort(redirect_uri)) {
-                var server = try callback.CallbackServer.init(allocator, 0);
-                defer server.deinit();
-                resolved_redirect_uri = try server.getCallbackUrl(allocator);
-                try allocations.append(allocator, resolved_redirect_uri);
-            } else {
-                const redirect_dup = try allocator.dupe(u8, redirect_uri);
-                try allocations.append(allocator, redirect_dup);
-                resolved_redirect_uri = redirect_dup;
-            }
+    if (method_def.isAuthorizationCode()) {
+        var resolved_redirect_uri = redirect_uri;
+        if (needsDynamicRedirectPort(redirect_uri)) {
+            var server = try callback.CallbackServer.init(allocator, 0);
+            defer server.deinit();
+            resolved_redirect_uri = try server.getCallbackUrl(allocator);
+            try allocations.append(allocator, resolved_redirect_uri);
+        } else {
+            const redirect_dup = try allocator.dupe(u8, redirect_uri);
+            try allocations.append(allocator, redirect_dup);
+            resolved_redirect_uri = redirect_dup;
+        }
 
-            var config = try oauth.configFromFormula(
-                allocator,
-                formula,
-                client_id_override,
-                client_secret_override,
-                resolved_redirect_uri,
-                scope_override,
-            );
-            defer config.deinit();
+        var config = try oauth.configFromFormula(
+            allocator,
+            formula,
+            method_name,
+            client_id_override,
+            client_secret_override,
+            resolved_redirect_uri,
+            scope_override,
+        );
+        defer config.deinit();
 
-            const pair = pkce.Pkce.generate();
-            const verifier = try allocator.dupe(u8, pair.getVerifier());
-            try allocations.append(allocator, verifier);
-            try replacements.append(allocator, .{ .key = "pkce_verifier", .value = verifier });
+        const pair = pkce.Pkce.generate();
+        const verifier = try allocator.dupe(u8, pair.getVerifier());
+        try allocations.append(allocator, verifier);
+        try replacements.append(allocator, .{ .key = "pkce_verifier", .value = verifier });
 
-            var state_bytes: [16]u8 = undefined;
-            std.crypto.random.bytes(&state_bytes);
-            var state: [22]u8 = undefined;
-            _ = std.base64.url_safe_no_pad.Encoder.encode(&state, &state_bytes);
-            const state_dup = try allocator.dupe(u8, &state);
-            try allocations.append(allocator, state_dup);
-            try replacements.append(allocator, .{ .key = "state", .value = state_dup });
+        var state_bytes: [16]u8 = undefined;
+        std.crypto.random.bytes(&state_bytes);
+        var state: [22]u8 = undefined;
+        _ = std.base64.url_safe_no_pad.Encoder.encode(&state, &state_bytes);
+        const state_dup = try allocator.dupe(u8, &state);
+        try allocations.append(allocator, state_dup);
+        try replacements.append(allocator, .{ .key = "state", .value = state_dup });
 
-            const authorize_url = try callback.buildAuthorizationUrl(
-                allocator,
-                config.authorization_endpoint,
-                config.client_id,
-                resolved_redirect_uri,
-                config.scope,
-                &state,
-                pair.getChallenge(),
-            );
-            const authorize_dup = try allocator.dupe(u8, authorize_url);
-            allocator.free(authorize_url);
-            try allocations.append(allocator, authorize_dup);
-            try replacements.append(allocator, .{ .key = "authorize_url", .value = authorize_dup });
+        const authorize_url = try callback.buildAuthorizationUrl(
+            allocator,
+            config.authorization_endpoint,
+            config.client_id,
+            resolved_redirect_uri,
+            config.scope,
+            &state,
+            pair.getChallenge(),
+        );
+        const authorize_dup = try allocator.dupe(u8, authorize_url);
+        allocator.free(authorize_url);
+        try allocations.append(allocator, authorize_dup);
+        try replacements.append(allocator, .{ .key = "authorize_url", .value = authorize_dup });
 
-            context.authorize_url = authorize_dup;
-            context.pkce_verifier = verifier;
-            context.state = state_dup;
-            context.redirect_uri = resolved_redirect_uri;
-        },
-        .device_code => {
-            var config = try oauth.configFromFormula(
-                allocator,
-                formula,
-                client_id_override,
-                client_secret_override,
-                redirect_uri,
-                scope_override,
-            );
-            defer config.deinit();
+        context.authorize_url = authorize_dup;
+        context.pkce_verifier = verifier;
+        context.state = state_dup;
+        context.redirect_uri = resolved_redirect_uri;
+    } else if (method_def.isDeviceCode()) {
+        var config = try oauth.configFromFormula(
+            allocator,
+            formula,
+            method_name,
+            client_id_override,
+            client_secret_override,
+            redirect_uri,
+            scope_override,
+        );
+        defer config.deinit();
 
-            var storage = session.MemoryStorage.init(allocator);
-            defer storage.deinit();
+        var storage = session.MemoryStorage.init(allocator);
+        defer storage.deinit();
 
-            var client = oauth.OAuthClient.init(allocator, config.toConfig(), storage.storage());
-            defer client.deinit();
+        var client = oauth.OAuthClient.init(allocator, config.toConfig(), storage.storage());
+        defer client.deinit();
 
-            var device_response = try client.requestDeviceCode();
-            defer device_response.deinit();
+        var device_response = try client.requestDeviceCode();
+        defer device_response.deinit();
 
-            const verification_uri = try allocator.dupe(u8, device_response.verification_uri);
-            try allocations.append(allocator, verification_uri);
-            try replacements.append(allocator, .{ .key = "verification_uri", .value = verification_uri });
-            context.verification_uri = verification_uri;
+        const verification_uri = try allocator.dupe(u8, device_response.verification_uri);
+        try allocations.append(allocator, verification_uri);
+        try replacements.append(allocator, .{ .key = "verification_uri", .value = verification_uri });
+        context.verification_uri = verification_uri;
 
-            if (device_response.verification_uri_complete) |uri| {
-                const complete_dup = try allocator.dupe(u8, uri);
-                try allocations.append(allocator, complete_dup);
-                try replacements.append(allocator, .{ .key = "verification_uri_complete", .value = complete_dup });
-                context.verification_uri_complete = complete_dup;
-            }
+        if (device_response.verification_uri_complete) |uri| {
+            const complete_dup = try allocator.dupe(u8, uri);
+            try allocations.append(allocator, complete_dup);
+            try replacements.append(allocator, .{ .key = "verification_uri_complete", .value = complete_dup });
+            context.verification_uri_complete = complete_dup;
+        }
 
-            const user_code = try allocator.dupe(u8, device_response.user_code);
-            try allocations.append(allocator, user_code);
-            try replacements.append(allocator, .{ .key = "user_code", .value = user_code });
-            context.user_code = user_code;
+        const user_code = try allocator.dupe(u8, device_response.user_code);
+        try allocations.append(allocator, user_code);
+        try replacements.append(allocator, .{ .key = "user_code", .value = user_code });
+        context.user_code = user_code;
 
-            const device_code = try allocator.dupe(u8, device_response.device_code);
-            try allocations.append(allocator, device_code);
-            try replacements.append(allocator, .{ .key = "device_code", .value = device_code });
-            context.device_code = device_code;
-            context.interval = device_response.interval;
-            context.expires_in = device_response.expires_in;
-        },
-        .api_key, .personal_access_token => {},
+        const device_code = try allocator.dupe(u8, device_response.device_code);
+        try allocations.append(allocator, device_code);
+        try replacements.append(allocator, .{ .key = "device_code", .value = device_code });
+        context.device_code = device_code;
+        context.interval = device_response.interval;
+        context.expires_in = device_response.expires_in;
     }
+    // For api_key methods, no context setup needed
 
     return expandScriptSteps(allocator, steps_source, replacements.items, context, &allocations);
 }

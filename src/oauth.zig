@@ -276,23 +276,29 @@ pub const OAuthConfigOwned = struct {
     }
 };
 
+/// Create OAuth config from a v2 formula and method name
 pub fn configFromFormula(
     allocator: Allocator,
     formula: *const formulas.Formula,
+    method_name: []const u8,
     client_id_override: ?[]const u8,
     client_secret_override: ?[]const u8,
     redirect_uri: []const u8,
     scope_override: ?[]const u8,
 ) !OAuthConfigOwned {
-    const scope_value = if (scope_override) |s| s else formula.scope;
+    // Get the method definition
+    const method = formula.getMethod(method_name) orelse return error.MethodNotFound;
 
-    // Use provided client_id/secret or fall back to formula's default public client
+    // Get scope from override, then method, then null
+    const scope_value = scope_override orelse method.scope;
+
+    // Use provided client_id/secret or fall back to formula's default client for this method
     var client_id: []const u8 = undefined;
     var client_secret: ?[]const u8 = client_secret_override;
 
     if (client_id_override) |id| {
         client_id = id;
-    } else if (formula.getDefaultClient()) |default_client| {
+    } else if (formula.getDefaultClientForMethod(method_name)) |default_client| {
         client_id = default_client.id;
         // Only use default client's secret if no override was provided
         if (client_secret == null) {
@@ -302,8 +308,13 @@ pub fn configFromFormula(
         return error.MissingClientId;
     }
 
-    const authorization_endpoint = formula.authorization_endpoint orelse return error.MissingEndpoint;
-    const token_endpoint = formula.token_endpoint orelse return error.MissingEndpoint;
+    // Get endpoints from the method
+    const endpoints = method.endpoints orelse return error.MissingEndpoint;
+    const token_endpoint = endpoints.token orelse return error.MissingEndpoint;
+
+    // For device code flow, we use the device endpoint instead of authorize
+    // The authorize endpoint is only required for authorization code flow
+    const authorization_endpoint = endpoints.authorize orelse endpoints.device orelse return error.MissingEndpoint;
 
     return OAuthConfigOwned{
         .allocator = allocator,
@@ -313,7 +324,7 @@ pub fn configFromFormula(
         .token_endpoint = try allocator.dupe(u8, token_endpoint),
         .redirect_uri = try allocator.dupe(u8, redirect_uri),
         .scope = if (scope_value) |s| try allocator.dupe(u8, s) else null,
-        .device_authorization_endpoint = if (formula.device_authorization_endpoint) |e| try allocator.dupe(u8, e) else null,
+        .device_authorization_endpoint = if (endpoints.device) |e| try allocator.dupe(u8, e) else null,
     };
 }
 
@@ -1049,22 +1060,32 @@ test "configFromFormula: with public client without leaks" {
     // First, ensure builtin formulas are clean
     formulas.deinitBuiltinFormulas();
 
-    // Create a test formula with public clients
+    // Create a v2 test formula with clients
     const json_formula =
         \\{
-        \\  "schema": "v1",
+        \\  "schema": "v2",
         \\  "id": "test-provider",
         \\  "label": "Test",
-        \\  "methods": ["device_code"],
-        \\  "endpoints": {
-        \\    "authorize": "https://test.com/authorize",
-        \\    "token": "https://test.com/token",
-        \\    "device": "https://test.com/device"
+        \\  "clients": [
+        \\    {"name": "default", "id": "default-id", "secret": "default-secret", "methods": ["device_code"]}
+        \\  ],
+        \\  "methods": {
+        \\    "device_code": {
+        \\      "endpoints": {
+        \\        "authorize": "https://test.com/authorize",
+        \\        "token": "https://test.com/token",
+        \\        "device": "https://test.com/device"
+        \\      },
+        \\      "scope": "default-scope"
+        \\    }
         \\  },
-        \\  "scope": "default-scope",
-        \\  "public_clients": [
-        \\    {"name": "default", "id": "default-id", "secret": "default-secret"}
-        \\  ]
+        \\  "apis": {
+        \\    "rest": {
+        \\      "base_url": "https://api.test.com",
+        \\      "auth_header": "Authorization: Bearer {token}",
+        \\      "methods": ["device_code"]
+        \\    }
+        \\  }
         \\}
     ;
 
@@ -1075,6 +1096,7 @@ test "configFromFormula: with public client without leaks" {
     var config = try configFromFormula(
         allocator,
         formula_owned.asConst(),
+        "device_code", // Method name
         null, // No override - should use public client
         null,
         "http://127.0.0.1/callback",
@@ -1093,17 +1115,27 @@ test "configFromFormula: with client_id override without leaks" {
 
     const json_formula =
         \\{
-        \\  "schema": "v1",
+        \\  "schema": "v2",
         \\  "id": "test",
         \\  "label": "Test",
-        \\  "methods": ["device_code"],
-        \\  "endpoints": {
-        \\    "authorize": "https://test.com/authorize",
-        \\    "token": "https://test.com/token"
-        \\  },
-        \\  "public_clients": [
+        \\  "clients": [
         \\    {"name": "default", "id": "default-id", "secret": "default-secret"}
-        \\  ]
+        \\  ],
+        \\  "methods": {
+        \\    "oauth": {
+        \\      "endpoints": {
+        \\        "authorize": "https://test.com/authorize",
+        \\        "token": "https://test.com/token"
+        \\      }
+        \\    }
+        \\  },
+        \\  "apis": {
+        \\    "rest": {
+        \\      "base_url": "https://api.test.com",
+        \\      "auth_header": "Authorization: Bearer {token}",
+        \\      "methods": ["oauth"]
+        \\    }
+        \\  }
         \\}
     ;
 
@@ -1114,6 +1146,7 @@ test "configFromFormula: with client_id override without leaks" {
     var config = try configFromFormula(
         allocator,
         formula_owned.asConst(),
+        "oauth", // Method name
         "override-id", // Override client ID
         "override-secret", // Override secret
         "http://127.0.0.1/callback",
@@ -1131,13 +1164,23 @@ test "configFromFormula: missing client_id returns error" {
 
     const json_formula =
         \\{
-        \\  "schema": "v1",
+        \\  "schema": "v2",
         \\  "id": "no-clients",
         \\  "label": "No Clients",
-        \\  "methods": ["device_code"],
-        \\  "endpoints": {
-        \\    "authorize": "https://test.com/authorize",
-        \\    "token": "https://test.com/token"
+        \\  "methods": {
+        \\    "oauth": {
+        \\      "endpoints": {
+        \\        "authorize": "https://test.com/authorize",
+        \\        "token": "https://test.com/token"
+        \\      }
+        \\    }
+        \\  },
+        \\  "apis": {
+        \\    "rest": {
+        \\      "base_url": "https://api.test.com",
+        \\      "auth_header": "Authorization: Bearer {token}",
+        \\      "methods": ["oauth"]
+        \\    }
         \\  }
         \\}
     ;
@@ -1145,10 +1188,11 @@ test "configFromFormula: missing client_id returns error" {
     var formula_owned = try formulas.loadFromJsonSlice(allocator, json_formula);
     defer formula_owned.deinit();
 
-    // Should fail because no public_clients and no override
+    // Should fail because no clients and no override
     const result = configFromFormula(
         allocator,
         formula_owned.asConst(),
+        "oauth", // Method name
         null,
         null,
         "http://127.0.0.1/callback",

@@ -2,7 +2,8 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { ImageResponse } from 'workers-og';
 import { formulas, getFormula, listFormulas, searchFormulas } from './formulas-data';
-import { renderHomepage, renderFormulaPage } from './html';
+import { renderHomepage, renderFormulaPage, renderSkillPage } from './html';
+import skillContent from './skill.md';
 
 const app = new Hono();
 
@@ -52,9 +53,20 @@ app.get('/formulas/:id', (c) => {
   return c.html(renderFormulaPage(formula));
 });
 
+// Skill page - instructions for agents
+app.get('/skill', (c) => {
+  return c.html(renderSkillPage(skillContent));
+});
+
+// Raw skill markdown
+app.get('/skill.md', (c) => {
+  c.header('Content-Type', 'text/markdown; charset=utf-8');
+  return c.body(skillContent);
+});
+
 // Sitemap for search engines
 app.get('/sitemap.xml', (c) => {
-  const baseUrl = 'https://schlussel.pepicrft.me';
+  const baseUrl = 'https://schlussel.me';
   const formulaList = listFormulas();
 
   const urls = [
@@ -86,7 +98,7 @@ app.get('/robots.txt', (c) => {
   const txt = 'User-agent: *\n' +
     'Allow: /\n' +
     '\n' +
-    'Sitemap: https://schlussel.pepicrft.me/sitemap.xml\n';
+    'Sitemap: https://schlussel.me/sitemap.xml\n';
 
   c.header('Content-Type', 'text/plain');
   return c.body(txt);
@@ -108,6 +120,33 @@ app.get('/og.png', async () => {
         </div>
         <div style="display: flex; background: #2D3436; color: #FFE135; padding: 20px 40px; border-radius: 16px; font-size: 32px; font-family: monospace; border: 4px solid #2D3436;">
           curl + schlussel is all you need
+        </div>
+      </div>
+    </div>
+  `;
+
+  return new ImageResponse(html, {
+    width: 1200,
+    height: 630,
+  });
+});
+
+// OG Image for skill page
+app.get('/og/skill.png', async () => {
+  const html = `
+    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; width: 1200px; height: 630px; background: #FFFBF0; font-family: sans-serif;">
+      <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; background: #FFFFFF; padding: 60px 80px; border-radius: 32px; border: 6px solid #2D3436; box-shadow: 12px 12px 0px #2D3436;">
+        <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 20px;">
+          <span style="font-size: 28px; font-weight: 600; color: #2D3436;">github.com/pepicrft/schlussel</span>
+        </div>
+        <div style="display: flex; font-size: 64px; font-weight: 700; color: #2D3436; margin-bottom: 20px; text-align: center;">
+          Agent Skill
+        </div>
+        <div style="display: flex; background: #A66CFF; color: white; padding: 12px 24px; border-radius: 50px; font-size: 24px; font-weight: 600; border: 4px solid #2D3436; box-shadow: 4px 4px 0px #2D3436; margin-bottom: 30px;">
+          Instructions for Agents
+        </div>
+        <div style="display: flex; background: #2D3436; color: #FFE135; padding: 20px 40px; border-radius: 16px; font-size: 28px; font-family: monospace; border: 4px solid #2D3436;">
+          Copy into your agent config
         </div>
       </div>
     </div>
@@ -198,6 +237,61 @@ app.get('/api/formulas/:id', (c) => {
 // API: Get all formulas (full data)
 app.get('/api/formulas.json', (c) => {
   return c.json(formulas);
+});
+
+// OAuth proxy endpoints to bypass CORS
+// These proxy requests to OAuth providers that don't support CORS
+
+// Proxy for device code request
+app.post('/api/oauth/device', async (c) => {
+  const body = await c.req.text();
+  const params = new URLSearchParams(body);
+  const targetUrl = params.get('_target_url');
+
+  if (!targetUrl) {
+    return c.json({ error: 'Missing _target_url parameter' }, 400);
+  }
+
+  // Remove our internal parameter before forwarding
+  params.delete('_target_url');
+
+  const response = await fetch(targetUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Accept': 'application/json'
+    },
+    body: params.toString()
+  });
+
+  const data = await response.json();
+  return c.json(data);
+});
+
+// Proxy for token request
+app.post('/api/oauth/token', async (c) => {
+  const body = await c.req.text();
+  const params = new URLSearchParams(body);
+  const targetUrl = params.get('_target_url');
+
+  if (!targetUrl) {
+    return c.json({ error: 'Missing _target_url parameter' }, 400);
+  }
+
+  // Remove our internal parameter before forwarding
+  params.delete('_target_url');
+
+  const response = await fetch(targetUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Accept': 'application/json'
+    },
+    body: params.toString()
+  });
+
+  const data = await response.json();
+  return c.json(data);
 });
 
 export default app;

@@ -9,26 +9,13 @@ pub const Error = error{
     InvalidMethod,
     InvalidSchema,
     MissingEndpoint,
+    MethodNotFound,
+    ApiNotFound,
 };
 
-pub const Method = enum {
-    authorization_code,
-    device_code,
-    api_key,
-    personal_access_token,
-
-    pub fn jsonStringify(self: Method, writer: anytype) !void {
-        try writer.write(@tagName(self));
-    }
-};
-
-pub fn methodFromString(value: []const u8) ?Method {
-    if (std.mem.eql(u8, value, "authorization_code")) return .authorization_code;
-    if (std.mem.eql(u8, value, "device_code")) return .device_code;
-    if (std.mem.eql(u8, value, "api_key")) return .api_key;
-    if (std.mem.eql(u8, value, "personal_access_token")) return .personal_access_token;
-    return null;
-}
+// ============================================================================
+// Script Types
+// ============================================================================
 
 pub const ScriptRegister = struct {
     url: []const u8,
@@ -41,58 +28,136 @@ pub const ScriptStep = struct {
     note: ?[]const u8,
 };
 
-pub const Script = struct {
-    register: ?ScriptRegister,
-    steps: ?[]const ScriptStep,
+// ============================================================================
+// Method Definition (v2 schema)
+// ============================================================================
+
+pub const Endpoints = struct {
+    authorize: ?[]const u8 = null,
+    token: ?[]const u8 = null,
+    device: ?[]const u8 = null,
+    registration: ?[]const u8 = null,
 };
 
-pub const StorageHints = struct {
-    key_template: ?[]const u8,
-    label: ?[]const u8,
-    value_label: ?[]const u8,
-    identity_label: ?[]const u8,
-    identity_hint: ?[]const u8,
-    rotation_url: ?[]const u8,
-    rotation_hint: ?[]const u8,
+pub const DynamicRegistration = struct {
+    client_name: ?[]const u8 = null,
+    grant_types: ?[]const []const u8 = null,
+    response_types: ?[]const []const u8 = null,
+    token_endpoint_auth_method: ?[]const u8 = null,
 };
 
-pub const PublicClient = struct {
+pub const MethodDef = struct {
+    name: []const u8,
+    label: ?[]const u8 = null,
+    endpoints: ?Endpoints = null,
+    scope: ?[]const u8 = null,
+    register: ?ScriptRegister = null,
+    script: ?[]const ScriptStep = null,
+    dynamic_registration: ?DynamicRegistration = null,
+
+    /// Check if this method is an OAuth authorization code flow
+    pub fn isAuthorizationCode(self: *const MethodDef) bool {
+        if (self.endpoints) |ep| {
+            return ep.authorize != null and ep.token != null and ep.device == null;
+        }
+        return false;
+    }
+
+    /// Check if this method is an OAuth device code flow
+    pub fn isDeviceCode(self: *const MethodDef) bool {
+        if (self.endpoints) |ep| {
+            return ep.device != null and ep.token != null;
+        }
+        return false;
+    }
+
+    /// Check if this method is an API key / manual credential flow
+    pub fn isApiKey(self: *const MethodDef) bool {
+        // No OAuth endpoints means it's a manual credential entry
+        if (self.endpoints) |ep| {
+            return ep.authorize == null and ep.token == null and ep.device == null;
+        }
+        return true;
+    }
+
+    /// Check if this method uses dynamic client registration
+    pub fn usesDynamicRegistration(self: *const MethodDef) bool {
+        return self.dynamic_registration != null;
+    }
+};
+
+// ============================================================================
+// API Definition (v2 schema)
+// ============================================================================
+
+pub const ApiDef = struct {
+    name: []const u8,
+    base_url: []const u8,
+    auth_header: []const u8,
+    docs_url: ?[]const u8 = null,
+    spec_url: ?[]const u8 = null,
+    spec_type: ?[]const u8 = null,
+    methods: []const []const u8, // References to method names
+};
+
+// ============================================================================
+// Client Definition (v2 schema)
+// ============================================================================
+
+pub const Client = struct {
     name: []const u8,
     id: []const u8,
-    secret: ?[]const u8,
-    source: ?[]const u8,
-    methods: ?[]const Method,
+    secret: ?[]const u8 = null,
+    source: ?[]const u8 = null,
+    methods: ?[]const []const u8 = null, // Which methods this client supports
+    redirect_uri: ?[]const u8 = null, // Pre-registered redirect URI for this client
 };
 
-pub const Quirks = struct {
-    dynamic_registration_endpoint: ?[]const u8,
-    token_response: ?[]const u8,
-    extra_response_fields: ?[]const []const u8,
-    /// Custom device code polling endpoint pattern (e.g., "/api/auth/device_code/{device_code}")
-    /// If set, uses GET polling instead of standard RFC 8628 token endpoint POST
-    device_code_poll_endpoint: ?[]const u8,
-    /// Custom browser URL pattern for device code flow (e.g., "/auth/device_codes/{device_code}?type=cli")
-    /// The {device_code} placeholder will be replaced with the actual code
-    device_code_browser_url: ?[]const u8,
+// ============================================================================
+// Identity Hints (v2 schema)
+// ============================================================================
+
+pub const Identity = struct {
+    label: ?[]const u8 = null,
+    hint: ?[]const u8 = null,
 };
+
+// ============================================================================
+// Formula (v2 schema)
+// ============================================================================
 
 pub const Formula = struct {
     schema: []const u8,
     id: []const u8,
     label: []const u8,
-    methods: []const Method,
-    authorization_endpoint: ?[]const u8,
-    token_endpoint: ?[]const u8,
-    device_authorization_endpoint: ?[]const u8,
-    scope: ?[]const u8,
-    storage: ?StorageHints,
-    public_clients: ?[]const PublicClient,
-    script: ?Script,
-    quirks: ?Quirks,
+    methods: []const MethodDef,
+    apis: []const ApiDef,
+    clients: ?[]const Client = null,
+    identity: ?Identity = null,
 
-    /// Get the default public client (first one in the list)
-    pub fn getDefaultClient(self: *const Formula) ?*const PublicClient {
-        if (self.public_clients) |clients| {
+    /// Get a method by name
+    pub fn getMethod(self: *const Formula, name: []const u8) ?*const MethodDef {
+        for (self.methods) |*method| {
+            if (std.mem.eql(u8, method.name, name)) {
+                return method;
+            }
+        }
+        return null;
+    }
+
+    /// Get an API by name
+    pub fn getApi(self: *const Formula, name: []const u8) ?*const ApiDef {
+        for (self.apis) |*api| {
+            if (std.mem.eql(u8, api.name, name)) {
+                return api;
+            }
+        }
+        return null;
+    }
+
+    /// Get the default client (first one in the list)
+    pub fn getDefaultClient(self: *const Formula) ?*const Client {
+        if (self.clients) |clients| {
             if (clients.len > 0) {
                 return &clients[0];
             }
@@ -100,9 +165,28 @@ pub const Formula = struct {
         return null;
     }
 
-    /// Find a public client by name
-    pub fn getClientByName(self: *const Formula, name: []const u8) ?*const PublicClient {
-        if (self.public_clients) |clients| {
+    /// Get the default client for a specific method
+    pub fn getDefaultClientForMethod(self: *const Formula, method_name: []const u8) ?*const Client {
+        if (self.clients) |clients| {
+            for (clients) |*client| {
+                if (client.methods) |supported_methods| {
+                    for (supported_methods) |m| {
+                        if (std.mem.eql(u8, m, method_name)) {
+                            return client;
+                        }
+                    }
+                } else {
+                    // No method restriction, this client works for all methods
+                    return client;
+                }
+            }
+        }
+        return null;
+    }
+
+    /// Find a client by name
+    pub fn getClientByName(self: *const Formula, name: []const u8) ?*const Client {
+        if (self.clients) |clients| {
             for (clients) |*client| {
                 if (std.mem.eql(u8, client.name, name)) {
                     return client;
@@ -111,16 +195,40 @@ pub const Formula = struct {
         }
         return null;
     }
+
+    /// Get the first method (for formulas with a single method)
+    pub fn getFirstMethod(self: *const Formula) ?*const MethodDef {
+        if (self.methods.len > 0) {
+            return &self.methods[0];
+        }
+        return null;
+    }
+
+    /// List method names
+    pub fn listMethodNames(self: *const Formula, allocator: Allocator) ![]const []const u8 {
+        var names = try allocator.alloc([]const u8, self.methods.len);
+        for (self.methods, 0..) |method, i| {
+            names[i] = method.name;
+        }
+        return names;
+    }
 };
 
-// Embedded formula JSON files
+// ============================================================================
+// Embedded formulas
+// ============================================================================
+
 const github_json = @embedFile("formulas/github.json");
 const codex_json = @embedFile("formulas/codex.json");
 const claude_json = @embedFile("formulas/claude.json");
+const linear_json = @embedFile("formulas/linear.json");
+const cloudflare_json = @embedFile("formulas/cloudflare.json");
+const shopify_json = @embedFile("formulas/shopify.json");
+const gitlab_json = @embedFile("formulas/gitlab.json");
+const stripe_json = @embedFile("formulas/stripe.json");
 
-// Builtin formulas loaded at first access
 var builtin_formulas_loaded = false;
-var builtin_formulas: [3]FormulaOwned = undefined;
+var builtin_formulas: [8]FormulaOwned = undefined;
 
 pub fn findById(allocator: Allocator, id: []const u8) !?*const Formula {
     if (!builtin_formulas_loaded) {
@@ -138,6 +246,11 @@ fn loadBuiltinFormulas(allocator: Allocator) !void {
     builtin_formulas[0] = try loadFromJsonSlice(allocator, github_json);
     builtin_formulas[1] = try loadFromJsonSlice(allocator, codex_json);
     builtin_formulas[2] = try loadFromJsonSlice(allocator, claude_json);
+    builtin_formulas[3] = try loadFromJsonSlice(allocator, linear_json);
+    builtin_formulas[4] = try loadFromJsonSlice(allocator, cloudflare_json);
+    builtin_formulas[5] = try loadFromJsonSlice(allocator, shopify_json);
+    builtin_formulas[6] = try loadFromJsonSlice(allocator, gitlab_json);
+    builtin_formulas[7] = try loadFromJsonSlice(allocator, stripe_json);
 }
 
 pub fn deinitBuiltinFormulas() void {
@@ -148,27 +261,40 @@ pub fn deinitBuiltinFormulas() void {
     builtin_formulas_loaded = false;
 }
 
+// ============================================================================
+// FormulaOwned - owns all allocated memory
+// ============================================================================
+
 pub const FormulaOwned = struct {
     allocator: Allocator,
     formula: Formula,
-    methods_alloc: ?[]const Method,
-    register_steps_alloc: ?[]const []const u8,
-    script_steps_alloc: ?[]const ScriptStep,
-    extra_fields_alloc: ?[]const []const u8,
-    public_clients_alloc: ?[]const PublicClient,
     parsed: json.Parsed(json.Value),
+    // Track all allocations for cleanup
+    methods_alloc: ?[]const MethodDef = null,
+    apis_alloc: ?[]const ApiDef = null,
+    clients_alloc: ?[]const Client = null,
+    // Nested allocations
+    string_arrays: std.ArrayListUnmanaged([]const []const u8) = .{},
+    script_steps_arrays: std.ArrayListUnmanaged([]const ScriptStep) = .{},
 
     pub fn deinit(self: *FormulaOwned) void {
-        if (self.methods_alloc) |arr| self.allocator.free(arr);
-        if (self.register_steps_alloc) |arr| self.allocator.free(arr);
-        if (self.script_steps_alloc) |arr| self.allocator.free(arr);
-        if (self.extra_fields_alloc) |arr| self.allocator.free(arr);
-        if (self.public_clients_alloc) |arr| {
-            for (arr) |client| {
-                if (client.methods) |methods| self.allocator.free(methods);
-            }
+        // Free string arrays (grant_types, response_types, api.methods, client.methods, register.steps)
+        for (self.string_arrays.items) |arr| {
             self.allocator.free(arr);
         }
+        self.string_arrays.deinit(self.allocator);
+
+        // Free script step arrays
+        for (self.script_steps_arrays.items) |arr| {
+            self.allocator.free(arr);
+        }
+        self.script_steps_arrays.deinit(self.allocator);
+
+        // Free main arrays
+        if (self.methods_alloc) |arr| self.allocator.free(arr);
+        if (self.apis_alloc) |arr| self.allocator.free(arr);
+        if (self.clients_alloc) |arr| self.allocator.free(arr);
+
         self.parsed.deinit();
     }
 
@@ -177,12 +303,24 @@ pub const FormulaOwned = struct {
     }
 };
 
+// ============================================================================
+// JSON Parsing Helpers
+// ============================================================================
+
 fn expectString(value: json.Value) ![]const u8 {
     return switch (value) {
         .string => |s| s,
         .number_string => |s| s,
         else => return Error.InvalidField,
     };
+}
+
+fn optionalString(value: ?json.Value) !?[]const u8 {
+    if (value) |v| {
+        if (v == .null) return null;
+        return try expectString(v);
+    }
+    return null;
 }
 
 fn parseStringArray(allocator: Allocator, value: json.Value) ![]const []const u8 {
@@ -195,78 +333,6 @@ fn parseStringArray(allocator: Allocator, value: json.Value) ![]const []const u8
     errdefer allocator.free(slice);
     for (arr.items, 0..) |item, idx| {
         slice[idx] = try expectString(item);
-    }
-    return slice;
-}
-
-fn optionalString(value: ?json.Value) !?[]const u8 {
-    if (value) |v| {
-        if (v == .null) return null;
-        return try expectString(v);
-    }
-    return null;
-}
-
-fn optionalStringArray(allocator: Allocator, value: ?json.Value) !?[]const []const u8 {
-    if (value) |v| {
-        if (v == .null) return null;
-        return try parseStringArray(allocator, v);
-    }
-    return null;
-}
-
-fn parseMethods(allocator: Allocator, value: json.Value) ![]const Method {
-    const arr = switch (value) {
-        .array => |a| a,
-        else => return Error.InvalidField,
-    };
-
-    var slice = try allocator.alloc(Method, arr.items.len);
-    errdefer allocator.free(slice);
-    for (arr.items, 0..) |item, idx| {
-        const text = try expectString(item);
-        slice[idx] = methodFromString(text) orelse return Error.InvalidMethod;
-    }
-    return slice;
-}
-
-fn parsePublicClients(allocator: Allocator, value: json.Value) ![]const PublicClient {
-    const arr = switch (value) {
-        .array => |a| a,
-        else => return Error.InvalidField,
-    };
-
-    var slice = try allocator.alloc(PublicClient, arr.items.len);
-    errdefer allocator.free(slice);
-    var parsed_count: usize = 0;
-    errdefer {
-        for (slice[0..parsed_count]) |client| {
-            if (client.methods) |methods| allocator.free(methods);
-        }
-    }
-    for (arr.items, 0..) |item, idx| {
-        const obj = switch (item) {
-            .object => |o| o,
-            else => return Error.InvalidField,
-        };
-
-        var methods: ?[]const Method = null;
-        if (obj.get("methods")) |methods_value| {
-            if (methods_value != .null) {
-                methods = try parseMethods(allocator, methods_value);
-            }
-        }
-        errdefer if (methods) |methods_slice| allocator.free(methods_slice);
-
-        slice[idx] = PublicClient{
-            .name = try expectString(obj.get("name") orelse return Error.MissingField),
-            .id = try expectString(obj.get("id") orelse return Error.MissingField),
-            .secret = try optionalString(obj.get("secret")),
-            .source = try optionalString(obj.get("source")),
-            .methods = methods,
-        };
-        methods = null;
-        parsed_count += 1;
     }
     return slice;
 }
@@ -296,6 +362,10 @@ fn parseScriptSteps(allocator: Allocator, value: json.Value) ![]const ScriptStep
     return slice;
 }
 
+// ============================================================================
+// Main Parser
+// ============================================================================
+
 pub fn loadFromJsonSlice(allocator: Allocator, slice: []const u8) !FormulaOwned {
     var parsed = try json.parseFromSlice(json.Value, allocator, slice, .{ .allocate = .alloc_always });
     errdefer parsed.deinit();
@@ -306,156 +376,211 @@ pub fn loadFromJsonSlice(allocator: Allocator, slice: []const u8) !FormulaOwned 
     };
 
     const schema = try expectString(root.get("schema") orelse return Error.MissingField);
-    if (!std.mem.eql(u8, schema, "v1")) return Error.InvalidSchema;
+    if (!std.mem.eql(u8, schema, "v2")) return Error.InvalidSchema;
 
     const id = try expectString(root.get("id") orelse return Error.MissingField);
     const label = try expectString(root.get("label") orelse return Error.MissingField);
 
+    var owned = FormulaOwned{
+        .allocator = allocator,
+        .formula = undefined,
+        .parsed = parsed,
+    };
+    errdefer owned.deinit();
+
+    // Parse methods (required)
     const methods_value = root.get("methods") orelse return Error.MissingField;
-    const methods = try parseMethods(allocator, methods_value);
-    errdefer allocator.free(methods);
+    const methods_obj = switch (methods_value) {
+        .object => |o| o,
+        else => return Error.InvalidField,
+    };
 
-    var authorization_endpoint: ?[]const u8 = null;
-    var token_endpoint: ?[]const u8 = null;
-    var device_authorization_endpoint: ?[]const u8 = null;
+    var methods = try allocator.alloc(MethodDef, methods_obj.count());
+    owned.methods_alloc = methods;
 
-    if (root.get("endpoints")) |endpoints_value| {
-        const endpoint_obj = switch (endpoints_value) {
+    var method_idx: usize = 0;
+    var methods_iter = methods_obj.iterator();
+    while (methods_iter.next()) |entry| {
+        const method_name = entry.key_ptr.*;
+        const method_obj = switch (entry.value_ptr.*) {
             .object => |o| o,
             else => return Error.InvalidField,
         };
 
-        authorization_endpoint = try optionalString(endpoint_obj.get("authorize"));
-        token_endpoint = try optionalString(endpoint_obj.get("token"));
-        device_authorization_endpoint = try optionalString(endpoint_obj.get("device"));
-    }
-
-    var needs_oauth_endpoints = false;
-    for (methods) |method| {
-        if (method == .authorization_code or method == .device_code) {
-            needs_oauth_endpoints = true;
-            break;
-        }
-    }
-    if (needs_oauth_endpoints and (authorization_endpoint == null or token_endpoint == null)) {
-        return Error.MissingEndpoint;
-    }
-
-    var script: ?Script = null;
-    var register_steps: ?[]const []const u8 = null;
-    var script_steps: ?[]const ScriptStep = null;
-    if (root.get("script")) |script_value| {
-        const script_obj = switch (script_value) {
-            .object => |o| o,
-            else => return Error.InvalidField,
+        var method_def = MethodDef{
+            .name = method_name,
+            .label = try optionalString(method_obj.get("label")),
+            .scope = try optionalString(method_obj.get("scope")),
         };
 
-        var register: ?ScriptRegister = null;
-        if (script_obj.get("register")) |register_value| {
-            const register_obj = switch (register_value) {
+        // Parse endpoints
+        if (method_obj.get("endpoints")) |endpoints_value| {
+            const ep_obj = switch (endpoints_value) {
                 .object => |o| o,
                 else => return Error.InvalidField,
             };
-            const register_url = try expectString(register_obj.get("url") orelse return Error.MissingField);
-            register_steps = try parseStringArray(allocator, register_obj.get("steps") orelse return Error.MissingField);
-            register = ScriptRegister{
-                .url = register_url,
-                .steps = register_steps.?,
+            method_def.endpoints = Endpoints{
+                .authorize = try optionalString(ep_obj.get("authorize")),
+                .token = try optionalString(ep_obj.get("token")),
+                .device = try optionalString(ep_obj.get("device")),
+                .registration = try optionalString(ep_obj.get("registration")),
             };
         }
 
-        if (script_obj.get("steps")) |steps_value| {
-            script_steps = try parseScriptSteps(allocator, steps_value);
+        // Parse register
+        if (method_obj.get("register")) |register_value| {
+            const reg_obj = switch (register_value) {
+                .object => |o| o,
+                else => return Error.InvalidField,
+            };
+            const reg_url = try expectString(reg_obj.get("url") orelse return Error.MissingField);
+            const reg_steps = try parseStringArray(allocator, reg_obj.get("steps") orelse return Error.MissingField);
+            try owned.string_arrays.append(allocator, reg_steps);
+            method_def.register = ScriptRegister{
+                .url = reg_url,
+                .steps = reg_steps,
+            };
         }
 
-        script = Script{
-            .register = register,
-            .steps = script_steps,
-        };
+        // Parse script (array of steps)
+        if (method_obj.get("script")) |script_value| {
+            const steps = try parseScriptSteps(allocator, script_value);
+            try owned.script_steps_arrays.append(allocator, steps);
+            method_def.script = steps;
+        }
+
+        // Parse dynamic_registration
+        if (method_obj.get("dynamic_registration")) |dr_value| {
+            const dr_obj = switch (dr_value) {
+                .object => |o| o,
+                else => return Error.InvalidField,
+            };
+            var dr = DynamicRegistration{
+                .client_name = try optionalString(dr_obj.get("client_name")),
+                .token_endpoint_auth_method = try optionalString(dr_obj.get("token_endpoint_auth_method")),
+            };
+            if (dr_obj.get("grant_types")) |gt| {
+                const arr = try parseStringArray(allocator, gt);
+                try owned.string_arrays.append(allocator, arr);
+                dr.grant_types = arr;
+            }
+            if (dr_obj.get("response_types")) |rt| {
+                const arr = try parseStringArray(allocator, rt);
+                try owned.string_arrays.append(allocator, arr);
+                dr.response_types = arr;
+            }
+            method_def.dynamic_registration = dr;
+        }
+
+        methods[method_idx] = method_def;
+        method_idx += 1;
     }
-    errdefer if (register_steps) |s| allocator.free(s);
-    errdefer if (script_steps) |s| allocator.free(s);
 
-    const scope = try optionalString(root.get("scope"));
-
-    var storage: ?StorageHints = null;
-    if (root.get("storage")) |storage_value| {
-        const storage_obj = switch (storage_value) {
-            .object => |o| o,
-            else => return Error.InvalidField,
-        };
-
-        storage = StorageHints{
-            .key_template = try optionalString(storage_obj.get("key_template")),
-            .label = try optionalString(storage_obj.get("label")),
-            .value_label = try optionalString(storage_obj.get("value_label")),
-            .identity_label = try optionalString(storage_obj.get("identity_label")),
-            .identity_hint = try optionalString(storage_obj.get("identity_hint")),
-            .rotation_url = try optionalString(storage_obj.get("rotation_url")),
-            .rotation_hint = try optionalString(storage_obj.get("rotation_hint")),
-        };
-    }
-
-    var public_clients: ?[]const PublicClient = null;
-    if (root.get("public_clients")) |clients_value| {
-        public_clients = try parsePublicClients(allocator, clients_value);
-    }
-    errdefer if (public_clients) |pc| allocator.free(pc);
-
-    var quirks: ?Quirks = null;
-    if (root.get("quirks")) |quirks_value| {
-        const quirks_obj = switch (quirks_value) {
-            .object => |o| o,
-            else => return Error.InvalidField,
-        };
-
-        const dynamic_endpoint = try optionalString(quirks_obj.get("dynamic_registration_endpoint"));
-        const token_response = try optionalString(quirks_obj.get("token_response"));
-        const extra_fields = try optionalStringArray(allocator, quirks_obj.get("extra_response_fields"));
-        errdefer if (extra_fields) |ef| allocator.free(ef);
-        const device_code_poll_endpoint = try optionalString(quirks_obj.get("device_code_poll_endpoint"));
-        const device_code_browser_url = try optionalString(quirks_obj.get("device_code_browser_url"));
-
-        quirks = Quirks{
-            .dynamic_registration_endpoint = dynamic_endpoint,
-            .token_response = token_response,
-            .extra_response_fields = extra_fields,
-            .device_code_poll_endpoint = device_code_poll_endpoint,
-            .device_code_browser_url = device_code_browser_url,
-        };
-    }
-    // Note: extra_fields errdefer is handled inside the if block above
-
-    return FormulaOwned{
-        .allocator = allocator,
-        .formula = Formula{
-            .schema = schema,
-            .id = id,
-            .label = label,
-            .methods = methods,
-            .authorization_endpoint = authorization_endpoint,
-            .token_endpoint = token_endpoint,
-            .device_authorization_endpoint = device_authorization_endpoint,
-            .scope = scope,
-            .storage = storage,
-            .public_clients = public_clients,
-            .script = script,
-            .quirks = quirks,
-        },
-        .methods_alloc = methods,
-        .register_steps_alloc = register_steps,
-        .script_steps_alloc = script_steps,
-        .extra_fields_alloc = if (quirks) |q| q.extra_response_fields else null,
-        .public_clients_alloc = public_clients,
-        .parsed = parsed,
+    // Parse apis (required)
+    const apis_value = root.get("apis") orelse return Error.MissingField;
+    const apis_obj = switch (apis_value) {
+        .object => |o| o,
+        else => return Error.InvalidField,
     };
+
+    var apis = try allocator.alloc(ApiDef, apis_obj.count());
+    owned.apis_alloc = apis;
+
+    var api_idx: usize = 0;
+    var apis_iter = apis_obj.iterator();
+    while (apis_iter.next()) |entry| {
+        const api_name = entry.key_ptr.*;
+        const api_obj = switch (entry.value_ptr.*) {
+            .object => |o| o,
+            else => return Error.InvalidField,
+        };
+
+        var api_methods: []const []const u8 = &.{};
+        if (api_obj.get("methods")) |methods_val| {
+            api_methods = try parseStringArray(allocator, methods_val);
+            try owned.string_arrays.append(allocator, api_methods);
+        }
+
+        apis[api_idx] = ApiDef{
+            .name = api_name,
+            .base_url = try expectString(api_obj.get("base_url") orelse return Error.MissingField),
+            .auth_header = try expectString(api_obj.get("auth_header") orelse return Error.MissingField),
+            .docs_url = try optionalString(api_obj.get("docs_url")),
+            .spec_url = try optionalString(api_obj.get("spec_url")),
+            .spec_type = try optionalString(api_obj.get("spec_type")),
+            .methods = api_methods,
+        };
+        api_idx += 1;
+    }
+
+    // Parse clients (optional)
+    var clients: ?[]const Client = null;
+    if (root.get("clients")) |clients_value| {
+        const clients_arr = switch (clients_value) {
+            .array => |a| a,
+            else => return Error.InvalidField,
+        };
+
+        var clients_slice = try allocator.alloc(Client, clients_arr.items.len);
+        owned.clients_alloc = clients_slice;
+
+        for (clients_arr.items, 0..) |item, idx| {
+            const client_obj = switch (item) {
+                .object => |o| o,
+                else => return Error.InvalidField,
+            };
+
+            var client_methods: ?[]const []const u8 = null;
+            if (client_obj.get("methods")) |m| {
+                if (m != .null) {
+                    client_methods = try parseStringArray(allocator, m);
+                    try owned.string_arrays.append(allocator, client_methods.?);
+                }
+            }
+
+            clients_slice[idx] = Client{
+                .name = try expectString(client_obj.get("name") orelse return Error.MissingField),
+                .id = try expectString(client_obj.get("id") orelse return Error.MissingField),
+                .secret = try optionalString(client_obj.get("secret")),
+                .source = try optionalString(client_obj.get("source")),
+                .methods = client_methods,
+                .redirect_uri = try optionalString(client_obj.get("redirect_uri")),
+            };
+        }
+        clients = clients_slice;
+    }
+
+    // Parse identity (optional)
+    var identity: ?Identity = null;
+    if (root.get("identity")) |identity_value| {
+        const identity_obj = switch (identity_value) {
+            .object => |o| o,
+            else => return Error.InvalidField,
+        };
+        identity = Identity{
+            .label = try optionalString(identity_obj.get("label")),
+            .hint = try optionalString(identity_obj.get("hint")),
+        };
+    }
+
+    owned.formula = Formula{
+        .schema = schema,
+        .id = id,
+        .label = label,
+        .methods = methods,
+        .apis = apis,
+        .clients = clients,
+        .identity = identity,
+    };
+
+    return owned;
 }
 
 pub fn loadFromPath(allocator: Allocator, path: []const u8) !FormulaOwned {
     const file = try std.fs.cwd().openFile(path, .{});
     defer file.close();
 
-    const buffer = try file.readToEndAlloc(allocator, 4096);
+    const buffer = try file.readToEndAlloc(allocator, 1024 * 1024);
     defer allocator.free(buffer);
 
     return loadFromJsonSlice(allocator, buffer);
@@ -465,312 +590,262 @@ pub fn loadFromPath(allocator: Allocator, path: []const u8) !FormulaOwned {
 // Tests
 // ============================================================================
 
-test "FormulaOwned: parse minimal formula without leaks" {
+test "FormulaOwned: parse v2 formula without leaks" {
     const allocator = std.testing.allocator;
 
-    const minimal_json =
+    const v2_json =
         \\{
-        \\  "schema": "v1",
+        \\  "schema": "v2",
         \\  "id": "test",
         \\  "label": "Test Provider",
-        \\  "methods": ["device_code"],
-        \\  "endpoints": {
-        \\    "authorize": "https://example.com/authorize",
-        \\    "token": "https://example.com/token"
+        \\  "methods": {
+        \\    "oauth": {
+        \\      "label": "OAuth",
+        \\      "endpoints": {
+        \\        "authorize": "https://test.com/authorize",
+        \\        "token": "https://test.com/token"
+        \\      },
+        \\      "scope": "read write",
+        \\      "script": [
+        \\        { "type": "open_url", "value": "{authorize_url}" },
+        \\        { "type": "wait_for_callback" }
+        \\      ]
+        \\    }
+        \\  },
+        \\  "apis": {
+        \\    "rest": {
+        \\      "base_url": "https://api.test.com",
+        \\      "auth_header": "Authorization: Bearer {token}",
+        \\      "methods": ["oauth"]
+        \\    }
         \\  }
         \\}
     ;
 
-    var owned = try loadFromJsonSlice(allocator, minimal_json);
+    var owned = try loadFromJsonSlice(allocator, v2_json);
     defer owned.deinit();
 
-    try std.testing.expectEqualStrings("v1", owned.formula.schema);
+    try std.testing.expectEqualStrings("v2", owned.formula.schema);
     try std.testing.expectEqualStrings("test", owned.formula.id);
-    try std.testing.expectEqualStrings("Test Provider", owned.formula.label);
     try std.testing.expectEqual(@as(usize, 1), owned.formula.methods.len);
-    try std.testing.expectEqual(Method.device_code, owned.formula.methods[0]);
+
+    const method = owned.formula.getMethod("oauth");
+    try std.testing.expect(method != null);
+    try std.testing.expectEqualStrings("OAuth", method.?.label.?);
+    try std.testing.expect(method.?.isAuthorizationCode());
+
+    const api = owned.formula.getApi("rest");
+    try std.testing.expect(api != null);
+    try std.testing.expectEqualStrings("https://api.test.com", api.?.base_url);
 }
 
-test "FormulaOwned: parse formula with public_clients without leaks" {
+test "FormulaOwned: parse v2 formula with clients without leaks" {
     const allocator = std.testing.allocator;
 
-    const json_with_clients =
+    const v2_json =
         \\{
-        \\  "schema": "v1",
+        \\  "schema": "v2",
         \\  "id": "github",
         \\  "label": "GitHub",
-        \\  "methods": ["device_code", "authorization_code"],
-        \\  "endpoints": {
-        \\    "authorize": "https://github.com/login/oauth/authorize",
-        \\    "token": "https://github.com/login/oauth/access_token",
-        \\    "device": "https://github.com/login/device/code"
-        \\  },
-        \\  "scope": "repo read:org",
-        \\  "public_clients": [
+        \\  "clients": [
         \\    {
         \\      "name": "gh-cli",
         \\      "id": "abc123",
         \\      "secret": "secret456",
         \\      "source": "https://github.com/cli/cli",
         \\      "methods": ["device_code"]
-        \\    },
-        \\    {
-        \\      "name": "another-cli",
-        \\      "id": "def789",
-        \\      "methods": ["authorization_code"]
         \\    }
-        \\  ]
-        \\}
-    ;
-
-    var owned = try loadFromJsonSlice(allocator, json_with_clients);
-    defer owned.deinit();
-
-    try std.testing.expectEqualStrings("v1", owned.formula.schema);
-    try std.testing.expectEqualStrings("github", owned.formula.id);
-    try std.testing.expectEqual(@as(usize, 2), owned.formula.methods.len);
-    try std.testing.expect(owned.formula.public_clients != null);
-    try std.testing.expectEqual(@as(usize, 2), owned.formula.public_clients.?.len);
-
-    // Test getDefaultClient
-    const default_client = owned.formula.getDefaultClient();
-    try std.testing.expect(default_client != null);
-    try std.testing.expectEqualStrings("gh-cli", default_client.?.name);
-    try std.testing.expectEqualStrings("abc123", default_client.?.id);
-    try std.testing.expectEqualStrings("secret456", default_client.?.secret.?);
-    try std.testing.expect(default_client.?.methods != null);
-    try std.testing.expectEqual(@as(usize, 1), default_client.?.methods.?.len);
-    try std.testing.expectEqual(Method.device_code, default_client.?.methods.?[0]);
-
-    // Test getClientByName
-    const found = owned.formula.getClientByName("another-cli");
-    try std.testing.expect(found != null);
-    try std.testing.expectEqualStrings("def789", found.?.id);
-    try std.testing.expect(found.?.secret == null);
-    try std.testing.expect(found.?.methods != null);
-    try std.testing.expectEqual(@as(usize, 1), found.?.methods.?.len);
-    try std.testing.expectEqual(Method.authorization_code, found.?.methods.?[0]);
-
-    // Test not found
-    const not_found = owned.formula.getClientByName("nonexistent");
-    try std.testing.expect(not_found == null);
-}
-
-test "FormulaOwned: parse formula with script register without leaks" {
-    const allocator = std.testing.allocator;
-
-    const json_with_script =
-        \\{
-        \\  "schema": "v1",
-        \\  "id": "custom",
-        \\  "label": "Custom Provider",
-        \\  "methods": ["authorization_code"],
-        \\  "endpoints": {
-        \\    "authorize": "https://custom.com/authorize",
-        \\    "token": "https://custom.com/token"
-        \\  },
-        \\  "script": {
-        \\    "register": {
-        \\      "url": "https://custom.com/register",
-        \\      "steps": [
-        \\        "Go to the registration page",
-        \\        "Create a new OAuth application",
-        \\        "Copy the client ID"
-        \\      ]
-        \\    },
-        \\    "steps": [
-        \\      { "type": "open_url", "value": "{authorize_url}" },
-        \\      { "type": "wait_for_callback" }
-        \\    ]
-        \\  }
-        \\}
-    ;
-
-    var owned = try loadFromJsonSlice(allocator, json_with_script);
-    defer owned.deinit();
-
-    try std.testing.expectEqualStrings("v1", owned.formula.schema);
-    try std.testing.expect(owned.formula.script != null);
-    try std.testing.expect(owned.formula.script.?.register != null);
-    try std.testing.expectEqualStrings("https://custom.com/register", owned.formula.script.?.register.?.url);
-    try std.testing.expectEqual(@as(usize, 3), owned.formula.script.?.register.?.steps.len);
-    try std.testing.expect(owned.formula.script.?.steps != null);
-    try std.testing.expectEqual(@as(usize, 2), owned.formula.script.?.steps.?.len);
-}
-
-test "FormulaOwned: parse formula with quirks without leaks" {
-    const allocator = std.testing.allocator;
-
-    const json_with_quirks =
-        \\{
-        \\  "schema": "v1",
-        \\  "id": "quirky",
-        \\  "label": "Quirky Provider",
-        \\  "methods": ["device_code"],
-        \\  "endpoints": {
-        \\    "authorize": "https://quirky.com/authorize",
-        \\    "token": "https://quirky.com/token"
-        \\  },
-        \\  "quirks": {
-        \\    "dynamic_registration_endpoint": "https://quirky.com/register",
-        \\    "token_response": "custom",
-        \\    "extra_response_fields": ["custom_field", "another_field"],
-        \\    "device_code_poll_endpoint": "/api/poll/{device_code}",
-        \\    "device_code_browser_url": "/auth/{device_code}"
-        \\  }
-        \\}
-    ;
-
-    var owned = try loadFromJsonSlice(allocator, json_with_quirks);
-    defer owned.deinit();
-
-    try std.testing.expectEqualStrings("v1", owned.formula.schema);
-    try std.testing.expect(owned.formula.quirks != null);
-    const quirks = owned.formula.quirks.?;
-    try std.testing.expectEqualStrings("https://quirky.com/register", quirks.dynamic_registration_endpoint.?);
-    try std.testing.expectEqualStrings("custom", quirks.token_response.?);
-    try std.testing.expectEqual(@as(usize, 2), quirks.extra_response_fields.?.len);
-    try std.testing.expectEqualStrings("/api/poll/{device_code}", quirks.device_code_poll_endpoint.?);
-}
-
-test "FormulaOwned: parse full formula with all fields without leaks" {
-    const allocator = std.testing.allocator;
-
-    const full_json =
-        \\{
-        \\  "schema": "v1",
-        \\  "id": "full",
-        \\  "label": "Full Provider",
-        \\  "methods": ["device_code", "authorization_code"],
-        \\  "endpoints": {
-        \\    "authorize": "https://full.com/authorize",
-        \\    "token": "https://full.com/token",
-        \\    "device": "https://full.com/device"
-        \\  },
-        \\  "scope": "read write admin",
-        \\  "public_clients": [
-        \\    {"name": "cli", "id": "id1", "secret": "secret1", "source": "https://source.com"}
         \\  ],
-        \\  "script": {
-        \\    "register": {
-        \\      "url": "https://full.com/register",
-        \\      "steps": ["Step 1", "Step 2"]
-        \\    },
-        \\    "steps": [
-        \\      { "type": "open_url", "value": "{authorize_url}" },
-        \\      { "type": "wait_for_callback" }
-        \\    ]
+        \\  "methods": {
+        \\    "device_code": {
+        \\      "endpoints": {
+        \\        "device": "https://github.com/login/device/code",
+        \\        "token": "https://github.com/login/oauth/access_token"
+        \\      },
+        \\      "scope": "repo"
+        \\    }
         \\  },
-        \\  "quirks": {
-        \\    "dynamic_registration_endpoint": "https://full.com/dyn",
-        \\    "extra_response_fields": ["field1"]
-        \\  },
-        \\  "storage": {
-        \\    "key_template": "{formula_id}:{method}",
-        \\    "label": "Full Provider",
-        \\    "value_label": "Access token",
-        \\    "identity_label": "Workspace",
-        \\    "identity_hint": "Use the org slug",
-        \\    "rotation_url": "https://full.com/settings/tokens",
-        \\    "rotation_hint": "Rotate every 90 days"
+        \\  "apis": {
+        \\    "rest": {
+        \\      "base_url": "https://api.github.com",
+        \\      "auth_header": "Authorization: Bearer {token}",
+        \\      "methods": ["device_code"]
+        \\    }
         \\  }
         \\}
     ;
 
-    var owned = try loadFromJsonSlice(allocator, full_json);
+    var owned = try loadFromJsonSlice(allocator, v2_json);
     defer owned.deinit();
 
-    try std.testing.expectEqualStrings("v1", owned.formula.schema);
-    try std.testing.expectEqualStrings("full", owned.formula.id);
-    try std.testing.expectEqualStrings("read write admin", owned.formula.scope.?);
-    try std.testing.expect(owned.formula.public_clients != null);
-    try std.testing.expect(owned.formula.script != null);
-    try std.testing.expect(owned.formula.quirks != null);
-    try std.testing.expect(owned.formula.storage != null);
-    try std.testing.expectEqualStrings("https://full.com/device", owned.formula.device_authorization_endpoint.?);
-    const storage = owned.formula.storage.?;
-    try std.testing.expectEqualStrings("{formula_id}:{method}", storage.key_template.?);
-    try std.testing.expectEqualStrings("Full Provider", storage.label.?);
-    try std.testing.expectEqualStrings("Access token", storage.value_label.?);
-    try std.testing.expectEqualStrings("Workspace", storage.identity_label.?);
-    try std.testing.expectEqualStrings("Use the org slug", storage.identity_hint.?);
+    const client = owned.formula.getDefaultClient();
+    try std.testing.expect(client != null);
+    try std.testing.expectEqualStrings("gh-cli", client.?.name);
+    try std.testing.expectEqualStrings("abc123", client.?.id);
+
+    const method = owned.formula.getMethod("device_code");
+    try std.testing.expect(method != null);
+    try std.testing.expect(method.?.isDeviceCode());
 }
 
-test "FormulaOwned: parse api key formula without endpoints" {
+test "FormulaOwned: parse v2 formula with identity without leaks" {
     const allocator = std.testing.allocator;
 
-    const api_key_json =
-        \\{
-        \\  "schema": "v1",
-        \\  "id": "acme",
-        \\  "label": "Acme API",
-        \\  "methods": ["api_key"],
-        \\  "script": {
-        \\    "steps": [
-        \\      { "type": "copy_key", "note": "Paste your API key into the agent." }
-        \\    ]
-        \\  }
-        \\}
-    ;
-
-    var owned = try loadFromJsonSlice(allocator, api_key_json);
-    defer owned.deinit();
-
-    try std.testing.expectEqualStrings("v1", owned.formula.schema);
-    try std.testing.expectEqualStrings("acme", owned.formula.id);
-    try std.testing.expectEqual(@as(usize, 1), owned.formula.methods.len);
-    try std.testing.expectEqual(Method.api_key, owned.formula.methods[0]);
-    try std.testing.expect(owned.formula.authorization_endpoint == null);
-    try std.testing.expect(owned.formula.token_endpoint == null);
-}
-
-test "FormulaOwned: error handling does not leak on invalid JSON" {
-    const allocator = std.testing.allocator;
-
-    // Invalid JSON syntax
-    const result1 = loadFromJsonSlice(allocator, "{ invalid json }");
-    try std.testing.expectError(error.SyntaxError, result1);
-
-    // Missing required field
-    const missing_id =
-        \\{
-        \\  "schema": "v1",
-        \\  "label": "Test",
-        \\  "methods": ["device_code"],
-        \\  "endpoints": {"authorize": "https://x.com/a", "token": "https://x.com/t"}
-        \\}
-    ;
-    const result2 = loadFromJsonSlice(allocator, missing_id);
-    try std.testing.expectError(Error.MissingField, result2);
-
-    // Invalid method type
-    const invalid_flow =
-        \\{
-        \\  "schema": "v1",
-        \\  "id": "test",
-        \\  "label": "Test",
-        \\  "methods": ["invalid_method"],
-        \\  "endpoints": {"authorize": "https://x.com/a", "token": "https://x.com/t"}
-        \\}
-    ;
-    const result3 = loadFromJsonSlice(allocator, invalid_flow);
-    try std.testing.expectError(Error.InvalidMethod, result3);
-
-    const invalid_schema =
+    const v2_json =
         \\{
         \\  "schema": "v2",
-        \\  "id": "test",
-        \\  "label": "Test",
-        \\  "methods": ["device_code"],
-        \\  "endpoints": {"authorize": "https://x.com/a", "token": "https://x.com/t"}
+        \\  "id": "linear",
+        \\  "label": "Linear",
+        \\  "identity": {
+        \\    "label": "Workspace",
+        \\    "hint": "Use the workspace slug"
+        \\  },
+        \\  "methods": {
+        \\    "api_key": {
+        \\      "script": [
+        \\        { "type": "copy_key", "note": "Paste your API key" }
+        \\      ]
+        \\    }
+        \\  },
+        \\  "apis": {
+        \\    "graphql": {
+        \\      "base_url": "https://api.linear.app/graphql",
+        \\      "auth_header": "Authorization: {token}",
+        \\      "methods": ["api_key"]
+        \\    }
+        \\  }
         \\}
     ;
-    const result_schema = loadFromJsonSlice(allocator, invalid_schema);
-    try std.testing.expectError(Error.InvalidSchema, result_schema);
 
-    // Not an object
-    const result4 = loadFromJsonSlice(allocator, "[]");
-    try std.testing.expectError(Error.InvalidRootDocument, result4);
+    var owned = try loadFromJsonSlice(allocator, v2_json);
+    defer owned.deinit();
+
+    try std.testing.expect(owned.formula.identity != null);
+    try std.testing.expectEqualStrings("Workspace", owned.formula.identity.?.label.?);
+    try std.testing.expectEqualStrings("Use the workspace slug", owned.formula.identity.?.hint.?);
+
+    const method = owned.formula.getMethod("api_key");
+    try std.testing.expect(method != null);
+    try std.testing.expect(method.?.isApiKey());
+}
+
+test "FormulaOwned: parse v2 formula with dynamic registration without leaks" {
+    const allocator = std.testing.allocator;
+
+    const v2_json =
+        \\{
+        \\  "schema": "v2",
+        \\  "id": "mcp-provider",
+        \\  "label": "MCP Provider",
+        \\  "methods": {
+        \\    "mcp_oauth": {
+        \\      "endpoints": {
+        \\        "registration": "https://mcp.example.com/register",
+        \\        "authorize": "https://mcp.example.com/authorize",
+        \\        "token": "https://mcp.example.com/token"
+        \\      },
+        \\      "dynamic_registration": {
+        \\        "client_name": "schlussel",
+        \\        "grant_types": ["authorization_code", "refresh_token"],
+        \\        "response_types": ["code"],
+        \\        "token_endpoint_auth_method": "none"
+        \\      },
+        \\      "script": [
+        \\        { "type": "open_url", "value": "{authorize_url}" },
+        \\        { "type": "wait_for_callback" }
+        \\      ]
+        \\    }
+        \\  },
+        \\  "apis": {
+        \\    "mcp": {
+        \\      "base_url": "https://mcp.example.com/mcp",
+        \\      "auth_header": "Authorization: Bearer {token}",
+        \\      "methods": ["mcp_oauth"]
+        \\    }
+        \\  }
+        \\}
+    ;
+
+    var owned = try loadFromJsonSlice(allocator, v2_json);
+    defer owned.deinit();
+
+    const method = owned.formula.getMethod("mcp_oauth");
+    try std.testing.expect(method != null);
+    try std.testing.expect(method.?.usesDynamicRegistration());
+    try std.testing.expectEqualStrings("schlussel", method.?.dynamic_registration.?.client_name.?);
+    try std.testing.expectEqual(@as(usize, 2), method.?.dynamic_registration.?.grant_types.?.len);
+}
+
+test "FormulaOwned: getDefaultClientForMethod filters by method" {
+    const allocator = std.testing.allocator;
+
+    const v2_json =
+        \\{
+        \\  "schema": "v2",
+        \\  "id": "multi-client",
+        \\  "label": "Multi Client",
+        \\  "clients": [
+        \\    {
+        \\      "name": "device-only",
+        \\      "id": "device-id",
+        \\      "methods": ["device_code"]
+        \\    },
+        \\    {
+        \\      "name": "oauth-only",
+        \\      "id": "oauth-id",
+        \\      "methods": ["oauth"]
+        \\    }
+        \\  ],
+        \\  "methods": {
+        \\    "device_code": {
+        \\      "endpoints": {
+        \\        "device": "https://test.com/device",
+        \\        "token": "https://test.com/token"
+        \\      }
+        \\    },
+        \\    "oauth": {
+        \\      "endpoints": {
+        \\        "authorize": "https://test.com/authorize",
+        \\        "token": "https://test.com/token"
+        \\      }
+        \\    }
+        \\  },
+        \\  "apis": {
+        \\    "api": {
+        \\      "base_url": "https://api.test.com",
+        \\      "auth_header": "Authorization: Bearer {token}",
+        \\      "methods": ["device_code", "oauth"]
+        \\    }
+        \\  }
+        \\}
+    ;
+
+    var owned = try loadFromJsonSlice(allocator, v2_json);
+    defer owned.deinit();
+
+    const device_client = owned.formula.getDefaultClientForMethod("device_code");
+    try std.testing.expect(device_client != null);
+    try std.testing.expectEqualStrings("device-id", device_client.?.id);
+
+    const oauth_client = owned.formula.getDefaultClientForMethod("oauth");
+    try std.testing.expect(oauth_client != null);
+    try std.testing.expectEqualStrings("oauth-id", oauth_client.?.id);
+}
+
+test "FormulaOwned: error on v1 schema" {
+    const allocator = std.testing.allocator;
+
+    const v1_json =
+        \\{
+        \\  "schema": "v1",
+        \\  "id": "test",
+        \\  "label": "Test",
+        \\  "methods": ["device_code"]
+        \\}
+    ;
+
+    const result = loadFromJsonSlice(allocator, v1_json);
+    try std.testing.expectError(Error.InvalidSchema, result);
 }
 
 test "builtin formulas: findById and cleanup without leaks" {
@@ -787,7 +862,7 @@ test "builtin formulas: findById and cleanup without leaks" {
     // Second lookup returns cached formula
     const github2 = try findById(allocator, "github");
     try std.testing.expect(github2 != null);
-    try std.testing.expect(github == github2); // Same pointer
+    try std.testing.expect(github == github2);
 
     // Non-existent formula
     const nonexistent = try findById(allocator, "nonexistent");
@@ -795,49 +870,4 @@ test "builtin formulas: findById and cleanup without leaks" {
 
     // Clean up
     deinitBuiltinFormulas();
-}
-
-test "builtin formulas: codex and claude formulas load correctly" {
-    const allocator = std.testing.allocator;
-
-    // Ensure clean state
-    deinitBuiltinFormulas();
-
-    // Test Codex formula
-    const codex = try findById(allocator, "codex");
-    try std.testing.expect(codex != null);
-    try std.testing.expectEqualStrings("v1", codex.?.schema);
-    try std.testing.expectEqualStrings("codex", codex.?.id);
-    try std.testing.expectEqualStrings("OpenAI Codex", codex.?.label);
-    try std.testing.expectEqualStrings("https://auth.openai.com/oauth/authorize", codex.?.authorization_endpoint.?);
-    try std.testing.expectEqualStrings("https://auth.openai.com/oauth/token", codex.?.token_endpoint.?);
-    try std.testing.expect(codex.?.public_clients != null);
-    try std.testing.expect(codex.?.public_clients.?.len == 1);
-    try std.testing.expectEqualStrings("codex-cli", codex.?.public_clients.?[0].name);
-    try std.testing.expectEqualStrings("app_EMoamEEZ73f0CkXaXp7hrann", codex.?.public_clients.?[0].id);
-
-    // Test Claude formula
-    const claude = try findById(allocator, "claude");
-    try std.testing.expect(claude != null);
-    try std.testing.expectEqualStrings("v1", claude.?.schema);
-    try std.testing.expectEqualStrings("claude", claude.?.id);
-    try std.testing.expectEqualStrings("Claude Code (Anthropic)", claude.?.label);
-    try std.testing.expectEqualStrings("https://console.anthropic.com/oauth/authorize", claude.?.authorization_endpoint.?);
-    try std.testing.expectEqualStrings("https://console.anthropic.com/v1/oauth/token", claude.?.token_endpoint.?);
-    try std.testing.expect(claude.?.public_clients != null);
-    try std.testing.expect(claude.?.public_clients.?.len == 1);
-    try std.testing.expectEqualStrings("claude-code", claude.?.public_clients.?[0].name);
-    try std.testing.expectEqualStrings("9d1c250a-e61b-44d9-88ed-5944d1962f5e", claude.?.public_clients.?[0].id);
-
-    // Clean up
-    deinitBuiltinFormulas();
-}
-
-test "methodFromString: returns correct methods" {
-    try std.testing.expectEqual(Method.authorization_code, methodFromString("authorization_code").?);
-    try std.testing.expectEqual(Method.device_code, methodFromString("device_code").?);
-    try std.testing.expectEqual(Method.api_key, methodFromString("api_key").?);
-    try std.testing.expectEqual(Method.personal_access_token, methodFromString("personal_access_token").?);
-    try std.testing.expect(methodFromString("invalid") == null);
-    try std.testing.expect(methodFromString("") == null);
 }

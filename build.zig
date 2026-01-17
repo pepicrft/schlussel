@@ -81,6 +81,10 @@ pub fn build(b: *std.Build) void {
     const run_auto_refresh_step = b.step("example-auto-refresh", "Run the automatic refresh example");
     run_auto_refresh_step.dependOn(&run_auto_refresh.step);
 
+    // Clap dependency for CLI argument parsing
+    const clap_dep = b.dependency("clap", .{});
+    const clap_mod = clap_dep.module("clap");
+
     // CLI executable
     const cli_exe = b.addExecutable(.{
         .name = "schlussel",
@@ -90,10 +94,20 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .imports = &.{
                 .{ .name = "schlussel", .module = lib_mod },
+                .{ .name = "clap", .module = clap_mod },
             },
         }),
     });
     b.installArtifact(cli_exe);
+
+    // Run step for CLI
+    const run_cli = b.addRunArtifact(cli_exe);
+    run_cli.step.dependOn(b.getInstallStep());
+    if (b.args) |args| {
+        run_cli.addArgs(args);
+    }
+    const run_step = b.step("run", "Run the schlussel CLI");
+    run_step.dependOn(&run_cli.step);
 
     // Docs generation
     const docs_mod = b.createModule(.{

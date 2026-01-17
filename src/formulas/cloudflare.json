@@ -1,0 +1,56 @@
+{
+  "schema": "v2",
+  "id": "cloudflare",
+  "label": "Cloudflare",
+  "description": "Authenticate with Cloudflare using OAuth authorization code flow or API tokens. Access the Cloudflare API for Workers, Pages, KV, D1, R2, and more.",
+  "apis": {
+    "rest": {
+      "base_url": "https://api.cloudflare.com/client/v4",
+      "auth_header": "Authorization: Bearer {token}",
+      "docs_url": "https://developers.cloudflare.com/api",
+      "spec_url": "https://raw.githubusercontent.com/cloudflare/api-schemas/main/openapi.json",
+      "spec_type": "openapi"
+    }
+  },
+  "clients": [
+    {
+      "name": "wrangler",
+      "id": "54d11594-84e4-41aa-b438-e81b8fa78ee7",
+      "source": "https://github.com/cloudflare/workers-sdk",
+      "methods": ["authorization_code"],
+      "redirect_uri": "http://localhost:8976/oauth/callback"
+    }
+  ],
+  "identity": {
+    "label": "Account",
+    "hint": "e.g., personal, work"
+  },
+  "methods": {
+    "authorization_code": {
+      "endpoints": {
+        "authorize": "https://dash.cloudflare.com/oauth2/auth",
+        "token": "https://dash.cloudflare.com/oauth2/token",
+        "revoke": "https://dash.cloudflare.com/oauth2/revoke"
+      },
+      "scope": "account:read user:read workers:write workers_kv:write workers_routes:write workers_scripts:write workers_tail:read d1:write pages:write zone:read ssl_certs:write ai:write queues:write offline_access",
+      "script": [
+        { "type": "open_url", "value": "{authorize_url}" },
+        { "type": "wait_for_callback" }
+      ]
+    },
+    "api_token": {
+      "register": {
+        "url": "https://dash.cloudflare.com/profile/api-tokens",
+        "steps": [
+          "Go to My Profile > API Tokens",
+          "Click 'Create Token'",
+          "Choose a template or create custom token with required permissions",
+          "Copy the generated token"
+        ]
+      },
+      "script": [
+        { "type": "copy_key", "note": "Paste your Cloudflare API token" }
+      ]
+    }
+  }
+}

@@ -1,4 +1,5 @@
 import { listFormulas, formulas, Formula } from './formulas-data';
+import { marked } from 'marked';
 
 const css = `
 :root {
@@ -611,13 +612,17 @@ pre code {
   font-size: 0.9rem;
 }
 
+@media (max-width: 900px) {
+  .nav__links {
+    display: none;
+  }
+}
+
 @media (max-width: 768px) {
   :root {
     --space-lg: 3rem;
     --space-xl: 4rem;
   }
-
-  .nav__links { display: none; }
 
   .hero__code {
     font-size: 0.85rem;
@@ -634,6 +639,25 @@ pre code {
   .hero__cta {
     flex-direction: column;
     align-items: center;
+  }
+
+  .playground__auth {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-xs);
+  }
+
+  .playground__auth-status {
+    margin-left: 0;
+  }
+
+  .playground__device-code-value {
+    font-size: 1.5rem;
+  }
+
+  .playground__editor-hint {
+    font-size: 0.65rem;
   }
 }
 `;
@@ -657,7 +681,7 @@ export function renderHomepage(): string {
 
   const title = 'Schlussel - Auth Runtime for Agents';
   const description = 'The local authentication runtime for agents. Codify how users authenticate, guide them through OAuth flows, and keep sessions safe with native storage and locked refreshes. curl + schlussel is all you need.';
-  const url = 'https://schlussel.pepicrft.me';
+  const url = 'https://schlussel.me';
 
   return '<!DOCTYPE html>\n' +
 '<html lang="en">\n' +
@@ -706,6 +730,7 @@ export function renderHomepage(): string {
 '        <a href="#features" class="nav__link">Features</a>\n' +
 '        <a href="#how-it-works" class="nav__link">How it works</a>\n' +
 '        <a href="#formulas" class="nav__link">Formulas</a>\n' +
+'        <a href="/skill" class="nav__link">SKILL.md</a>\n' +
 '        <a href="/api/formulas" class="nav__link">API</a>\n' +
 '        <a href="https://github.com/pepicrft/schlussel" class="nav__link">GitHub</a>\n' +
 '      </div>\n' +
@@ -814,8 +839,8 @@ export function renderHomepage(): string {
 '            <div class="step__content">\n' +
 '              <h3>Schlussel Handles the Flow</h3>\n' +
 '              <p>\n' +
-'                Schlussel checks for existing tokens, refreshes if needed (with locking),\n' +
-'                or guides the user through OAuth. All based on the formula for that platform.\n' +
+'                Schlussel auto-selects a public client and method when available, checks for existing tokens,\n' +
+'                refreshes if needed (with locking), or guides the user through OAuth. All based on the formula for that platform.\n' +
 '              </p>\n' +
 '            </div>\n' +
 '          </div>\n' +
@@ -836,7 +861,7 @@ export function renderHomepage(): string {
 '    <section class="reflection" id="why">\n' +
 '      <div class="container">\n' +
 '        <div class="reflection__content">\n' +
-'          <h2 class="reflection__title">The Narrow Waist for Agents</h2>\n' +
+'          <h2 class="reflection__title">The Auth Narrow Waist for Agents</h2>\n' +
 '          <p class="reflection__text">\n' +
 '            Not every service on the internet exposes an API. Many are hesitant, watching how\n' +
 '            a new layer of agentic applications and LLMs might extract value from their platforms\n' +
@@ -885,7 +910,7 @@ export function renderHomepage(): string {
 '        <p class="formulas__intro">\n' +
 '          Schlussel ships with formulas for popular platforms. Each formula knows\n' +
 '          the OAuth endpoints, scopes, and even includes public client credentials\n' +
-'          when available. Zero config for common cases.\n' +
+'          when available. When a formula has a public client, Schlussel auto-selects it. Just run and authenticate.\n' +
 '        </p>\n' +
 '        <div class="search">\n' +
 '          <input type="text" class="search__input" id="formula-search" placeholder="Search formulas (e.g. github, oauth, api_key...)">\n' +
@@ -1198,12 +1223,264 @@ const formulaPageCss = `
   box-shadow: var(--shadow-hover);
   color: var(--dark);
 }
+
+/* Playground styles */
+.playground {
+  margin-top: var(--space-lg);
+}
+
+.playground__title {
+  font-size: 1.5rem;
+  margin-bottom: var(--space-sm);
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.playground__desc {
+  margin-bottom: var(--space-md);
+  opacity: 0.85;
+}
+
+.playground__auth {
+  margin-bottom: var(--space-md);
+}
+
+.playground__auth-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--mint);
+  border: var(--border-thick);
+  border-radius: 12px;
+  box-shadow: var(--shadow-cartoon);
+  font-family: 'Fredoka', sans-serif;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.playground__auth-btn:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: var(--shadow-hover);
+}
+
+.playground__auth-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: var(--shadow-cartoon);
+}
+
+.playground__auth-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-left: var(--space-sm);
+  font-size: 0.9rem;
+}
+
+.playground__auth-status--success {
+  color: var(--mint);
+}
+
+.playground__auth-status--error {
+  color: var(--coral);
+}
+
+.playground__auth-status--info {
+  color: var(--blue);
+}
+
+.playground__device-code {
+  background: var(--white);
+  padding: var(--space-md);
+  border-radius: 16px;
+  border: var(--border-thick);
+  box-shadow: var(--shadow-cartoon);
+  margin-bottom: var(--space-md);
+  text-align: center;
+}
+
+.playground__device-code p {
+  margin-bottom: var(--space-sm);
+}
+
+.playground__device-code a {
+  color: var(--purple);
+  font-weight: 600;
+}
+
+.playground__device-code-value {
+  font-family: 'Space Mono', monospace;
+  font-size: 2rem;
+  font-weight: 700;
+  background: var(--yellow-light);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: 12px;
+  border: var(--border-thick);
+  display: inline-block;
+  margin-bottom: var(--space-sm);
+  letter-spacing: 0.1em;
+}
+
+.playground__device-code-copy {
+  display: inline-block;
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--purple);
+  color: var(--white);
+  border: var(--border);
+  border-radius: 8px;
+  font-family: 'Fredoka', sans-serif;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.playground__device-code-copy:hover {
+  transform: scale(1.05);
+}
+
+.playground__console {
+  background: var(--white);
+  border-radius: 16px;
+  border: var(--border-thick);
+  box-shadow: var(--shadow-cartoon-lg);
+  overflow: hidden;
+}
+
+.playground__console-header {
+  background: var(--dark);
+  color: var(--white);
+  padding: var(--space-xs) var(--space-sm);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: var(--border-thick);
+}
+
+.playground__console-dots {
+  display: flex;
+  gap: 6px;
+}
+
+.playground__console-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--dark);
+}
+
+.playground__console-dot--red { background: var(--coral); }
+.playground__console-dot--yellow { background: var(--yellow); }
+.playground__console-dot--green { background: var(--mint); }
+
+.playground__console-title {
+  font-family: 'Space Mono', monospace;
+  font-size: 0.85rem;
+}
+
+.playground__editor {
+  position: relative;
+  background: #1a1a2e;
+  border-bottom: 2px solid #333;
+}
+
+.playground__editor-hint {
+  position: absolute;
+  bottom: 8px;
+  right: 16px;
+  font-size: 0.75rem;
+  color: #666;
+  font-family: 'Space Mono', monospace;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.playground__run-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--yellow);
+  border: var(--border);
+  border-radius: 8px;
+  font-family: 'Fredoka', sans-serif;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.playground__run-btn:hover {
+  transform: scale(1.05);
+}
+
+.playground__run-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.playground__output {
+  background: var(--dark);
+  color: var(--yellow);
+  min-height: 100px;
+  max-height: 300px;
+  overflow-y: auto;
+  padding: var(--space-sm);
+  font-family: 'Space Mono', monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.playground__output-line {
+  margin-bottom: 4px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.playground__output-line--error {
+  color: var(--coral);
+}
+
+.playground__output-line--info {
+  color: var(--blue);
+}
+
+.playground__output-empty {
+  opacity: 0.5;
+  font-style: italic;
+}
+
+.playground__headers-preview {
+  background: #252540;
+  padding: var(--space-sm);
+  border-bottom: 2px solid #333;
+  font-family: 'Space Mono', monospace;
+  font-size: 0.8rem;
+  color: #a0a0a0;
+}
+
+.playground__headers-label {
+  font-weight: 600;
+  margin-bottom: 4px;
+  font-family: 'Fredoka', sans-serif;
+  color: #888;
+}
+
+.playground__headers-value {
+  color: #26DE81;
+}
 `;
 
 export function renderFormulaPage(formula: Formula): string {
   const title = formula.label + ' Authentication - Schlussel';
   const description = formula.description || 'Authenticate with ' + formula.label + ' using Schlussel, the auth runtime for agents.';
-  const url = 'https://schlussel.pepicrft.me/formulas/' + formula.id;
+  const url = 'https://schlussel.me/formulas/' + formula.id;
 
   // Render methods section
   const methodsHtml = Object.entries(formula.methods).map(([methodId, method]) => {
@@ -1253,6 +1530,15 @@ export function renderFormulaPage(formula: Formula): string {
       if (api.methods && api.methods.length > 0) {
         apiDetails += '<div class="formula-api__detail"><span class="formula-method__detail-label">Methods:</span> ' + api.methods.map(m => '<span class="formula-method__detail-value">' + m + '</span>').join(' ') + '</div>';
       }
+      if (api.variables) {
+        const varsHtml = Object.entries(api.variables).map(([varName, varDef]) => {
+          let varInfo = '<code>{' + varName + '}</code>';
+          if (varDef.hint) varInfo += ' - ' + varDef.hint;
+          if (varDef.example) varInfo += ' (e.g., <code>' + varDef.example + '</code>)';
+          return varInfo;
+        }).join(', ');
+        apiDetails += '<div class="formula-api__detail"><span class="formula-method__detail-label">Variables:</span> ' + varsHtml + '</div>';
+      }
       return '<div class="formula-api"><div class="formula-api__name">' + apiId + '</div>' + apiDetails + '</div>';
     }).join('');
     apisHtml = '<div class="formula-section">' +
@@ -1278,7 +1564,7 @@ export function renderFormulaPage(formula: Formula): string {
     }).join('');
     clientsHtml = '<div class="formula-section">' +
       '<h3 class="formula-section__title"><span class="formula-section__icon">📦</span> Public Clients</h3>' +
-      '<p style="margin-bottom: var(--space-sm); opacity: 0.85;">These clients are bundled with the formula. You can use them without registering your own OAuth application.</p>' +
+      '<p style="margin-bottom: var(--space-sm); opacity: 0.85;">These clients are bundled with the formula. Schlussel auto-selects the first available public client and its supported method. Just run the command below.</p>' +
       clientsContent +
     '</div>';
   }
@@ -1290,6 +1576,375 @@ export function renderFormulaPage(formula: Formula): string {
       '<h3 class="formula-section__title"><span class="formula-section__icon">👤</span> Identity</h3>' +
       '<div class="formula-method__detail"><span class="formula-method__detail-label">' + (formula.identity.label || 'Account') + ':</span> ' + (formula.identity.hint || 'Specify an identifier for this account') + '</div>' +
     '</div>';
+  }
+
+  // Playground section - only for formulas with public clients that support device_code
+  let playgroundHtml = '';
+  let playgroundScript = '';
+  const playgroundClient = formula.clients?.find(c => c.methods?.includes('device_code'));
+  const deviceCodeMethod = formula.methods?.device_code;
+  const restApi = formula.apis?.rest;
+
+  if (playgroundClient && deviceCodeMethod && restApi) {
+    const deviceUrl = deviceCodeMethod.endpoints?.device || '';
+    const tokenUrl = deviceCodeMethod.endpoints?.token || '';
+    const scope = deviceCodeMethod.scope || '';
+    const clientId = playgroundClient.id;
+    const clientSecret = playgroundClient.secret || '';
+    const baseUrl = restApi.base_url;
+    const exampleEndpoint = restApi.example_endpoint || '/';
+    const exampleUrl = baseUrl + exampleEndpoint;
+
+    playgroundHtml = `
+      <div class="playground" id="playground">
+        <h2 class="playground__title">🎮 API Playground</h2>
+        <p class="playground__desc">
+          Authenticate with ${formula.label} and try the API right here. Your token stays in your browser and is not stored.
+        </p>
+
+        <div class="playground__auth">
+          <button class="playground__auth-btn" id="auth-btn">
+            🔐 Authenticate with ${formula.label}
+          </button>
+          <span class="playground__auth-status" id="auth-status"></span>
+        </div>
+
+        <div class="playground__device-code" id="device-code-box" style="display: none;">
+          <p>Open <a id="device-link" href="#" target="_blank"></a> and enter this code:</p>
+          <div class="playground__device-code-value" id="device-code-value"></div>
+          <button class="playground__device-code-copy" id="copy-code-btn">Copy Code</button>
+        </div>
+
+        <div class="playground__console">
+          <div class="playground__console-header">
+            <div class="playground__console-dots">
+              <span class="playground__console-dot playground__console-dot--red"></span>
+              <span class="playground__console-dot playground__console-dot--yellow"></span>
+              <span class="playground__console-dot playground__console-dot--green"></span>
+            </div>
+            <span class="playground__console-title">console</span>
+            <button class="playground__run-btn" id="run-btn" disabled>▶ Run</button>
+          </div>
+          <div class="playground__headers-preview" id="headers-preview" style="display: none;">
+            <div class="playground__headers-label">Available after auth:</div>
+            <div class="playground__headers-value">const headers = { "Authorization": "Bearer ..." }</div>
+          </div>
+          <div class="playground__editor">
+            <div id="code-editor" style="height: 180px;"></div>
+            <span class="playground__editor-hint">Cmd/Ctrl + Enter to run</span>
+          </div>
+          <div class="playground__output" id="output">
+            <div class="playground__output-empty">Output will appear here...</div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    playgroundScript = `
+  <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
+  <script>
+    (function() {
+      const authBtn = document.getElementById('auth-btn');
+      const authStatus = document.getElementById('auth-status');
+      const runBtn = document.getElementById('run-btn');
+      const editorContainer = document.getElementById('code-editor');
+      const output = document.getElementById('output');
+      const headersPreview = document.getElementById('headers-preview');
+      const deviceCodeBox = document.getElementById('device-code-box');
+      const deviceCodeValue = document.getElementById('device-code-value');
+      const deviceLink = document.getElementById('device-link');
+      const copyCodeBtn = document.getElementById('copy-code-btn');
+
+      let token = null;
+      let headers = null;
+      let editor = null;
+
+      // Default code
+      const defaultCode = \`// After auth, 'headers' will contain your Authorization header
+
+const res = await fetch('${exampleUrl}', { headers })
+const data = await res.json()
+console.log(data)\`;
+
+      // Initialize Monaco Editor
+      require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs' } });
+      require(['vs/editor/editor.main'], function () {
+        // Define a dark theme matching our console
+        monaco.editor.defineTheme('playground-dark', {
+          base: 'vs-dark',
+          inherit: true,
+          rules: [],
+          colors: {
+            'editor.background': '#1a1a2e',
+            'editor.lineHighlightBackground': '#252540',
+            'editorLineNumber.foreground': '#666',
+            'editorCursor.foreground': '#FFE135'
+          }
+        });
+
+        editor = monaco.editor.create(editorContainer, {
+          value: defaultCode,
+          language: 'javascript',
+          theme: 'playground-dark',
+          minimap: { enabled: false },
+          fontSize: 14,
+          lineNumbers: 'on',
+          scrollBeyondLastLine: false,
+          automaticLayout: true,
+          tabSize: 2,
+          wordWrap: 'on',
+          padding: { top: 12, bottom: 12 }
+        });
+
+        // Add Cmd/Ctrl+Enter to run
+        editor.addAction({
+          id: 'run-code',
+          label: 'Run Code',
+          keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter],
+          run: function() {
+            runCode();
+          }
+        });
+
+        // Add 'headers' to autocomplete
+        monaco.languages.registerCompletionItemProvider('javascript', {
+          provideCompletionItems: function(model, position) {
+            return {
+              suggestions: [
+                {
+                  label: 'headers',
+                  kind: monaco.languages.CompletionItemKind.Variable,
+                  insertText: 'headers',
+                  detail: 'Authorization headers object',
+                  documentation: 'Contains { "Authorization": "Bearer <token>" }'
+                },
+                {
+                  label: 'fetch with headers',
+                  kind: monaco.languages.CompletionItemKind.Snippet,
+                  insertText: "const res = await fetch('\${1:url}', { headers })\\nconst data = await res.json()\\nconsole.log(data)",
+                  insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                  detail: 'Fetch with auth headers'
+                }
+              ]
+            };
+          }
+        });
+      });
+
+      // OAuth config
+      const config = {
+        deviceUrl: ${JSON.stringify(deviceUrl)},
+        tokenUrl: ${JSON.stringify(tokenUrl)},
+        clientId: ${JSON.stringify(clientId)},
+        clientSecret: ${JSON.stringify(clientSecret)},
+        scope: ${JSON.stringify(scope)}
+      };
+
+      // Start device code flow
+      authBtn.addEventListener('click', async () => {
+        authBtn.disabled = true;
+        authBtn.textContent = '⏳ Starting...';
+        authStatus.textContent = '';
+        authStatus.className = 'playground__auth-status';
+        deviceCodeBox.style.display = 'none';
+
+        try {
+          // Request device code via proxy to bypass CORS
+          const params = new URLSearchParams({
+            _target_url: config.deviceUrl,
+            client_id: config.clientId,
+            scope: config.scope
+          });
+
+          const response = await fetch('/api/oauth/device', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+              'Accept': 'application/json'
+            },
+            body: params.toString()
+          });
+
+          if (!response.ok) {
+            throw new Error('Failed to get device code');
+          }
+
+          const data = await response.json();
+          const { device_code, user_code, verification_uri, interval, expires_in } = data;
+
+          // Show the code to the user
+          deviceCodeBox.style.display = 'block';
+          deviceCodeValue.textContent = user_code;
+          deviceLink.href = verification_uri;
+          deviceLink.textContent = verification_uri;
+          authBtn.textContent = '⏳ Waiting for authorization...';
+          authStatus.textContent = 'Enter the code above';
+          authStatus.className = 'playground__auth-status playground__auth-status--info';
+
+          // Copy code button
+          copyCodeBtn.onclick = async () => {
+            await navigator.clipboard.writeText(user_code);
+            copyCodeBtn.textContent = 'Copied!';
+            setTimeout(() => { copyCodeBtn.textContent = 'Copy Code'; }, 2000);
+          };
+
+          // Poll for token
+          const pollInterval = (interval || 5) * 1000;
+          const expiresAt = Date.now() + (expires_in || 900) * 1000;
+
+          const poll = async () => {
+            if (Date.now() > expiresAt) {
+              onAuthError('Code expired. Please try again.');
+              return;
+            }
+
+            try {
+              const tokenParams = new URLSearchParams({
+                _target_url: config.tokenUrl,
+                client_id: config.clientId,
+                device_code: device_code,
+                grant_type: 'urn:ietf:params:oauth:grant-type:device_code'
+              });
+
+              if (config.clientSecret) {
+                tokenParams.append('client_secret', config.clientSecret);
+              }
+
+              const tokenResponse = await fetch('/api/oauth/token', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/x-www-form-urlencoded',
+                  'Accept': 'application/json'
+                },
+                body: tokenParams.toString()
+              });
+
+              const tokenData = await tokenResponse.json();
+
+              if (tokenData.error === 'authorization_pending') {
+                // Still waiting, poll again
+                setTimeout(poll, pollInterval);
+                return;
+              }
+
+              if (tokenData.error === 'slow_down') {
+                // Slow down polling
+                setTimeout(poll, pollInterval + 5000);
+                return;
+              }
+
+              if (tokenData.error) {
+                onAuthError(tokenData.error_description || tokenData.error);
+                return;
+              }
+
+              if (tokenData.access_token) {
+                token = tokenData.access_token;
+                headers = { "Authorization": "Bearer " + token };
+                onAuthSuccess();
+                return;
+              }
+
+              // Unknown response, keep polling
+              setTimeout(poll, pollInterval);
+
+            } catch (err) {
+              setTimeout(poll, pollInterval);
+            }
+          };
+
+          // Start polling
+          setTimeout(poll, pollInterval);
+
+        } catch (err) {
+          onAuthError(err.message);
+        }
+      });
+
+      function onAuthSuccess() {
+        deviceCodeBox.style.display = 'none';
+        authBtn.textContent = '✓ Authenticated';
+        authBtn.disabled = true;
+        authStatus.textContent = '✓ Token received';
+        authStatus.className = 'playground__auth-status playground__auth-status--success';
+        runBtn.disabled = false;
+        headersPreview.style.display = 'block';
+        headersPreview.querySelector('.playground__headers-value').textContent =
+          'const headers = { "Authorization": "Bearer ' + token.substring(0, 8) + '..." }';
+      }
+
+      function onAuthError(message) {
+        deviceCodeBox.style.display = 'none';
+        authBtn.textContent = '🔐 Authenticate with ${formula.label}';
+        authBtn.disabled = false;
+        authStatus.textContent = '✗ ' + message;
+        authStatus.className = 'playground__auth-status playground__auth-status--error';
+      }
+
+      // Run code
+      async function runCode() {
+        if (!token) {
+          appendOutput('Please authenticate first', 'error');
+          return;
+        }
+
+        if (!editor) return;
+        const code = editor.getValue();
+        if (!code.trim()) return;
+
+        output.innerHTML = '';
+        runBtn.disabled = true;
+        runBtn.textContent = '⏳ Running...';
+
+        // Create a sandbox with headers available
+        const sandbox = {
+          headers: headers,
+          fetch: window.fetch.bind(window),
+          console: {
+            log: (...args) => appendOutput(args.map(formatValue).join(' ')),
+            error: (...args) => appendOutput(args.map(formatValue).join(' '), 'error'),
+            info: (...args) => appendOutput(args.map(formatValue).join(' '), 'info'),
+            warn: (...args) => appendOutput(args.map(formatValue).join(' '), 'error')
+          }
+        };
+
+        try {
+          const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
+          const fn = new AsyncFunction('headers', 'fetch', 'console', code);
+          await fn(sandbox.headers, sandbox.fetch, sandbox.console);
+        } catch (err) {
+          appendOutput('Error: ' + err.message, 'error');
+        }
+
+        runBtn.disabled = false;
+        runBtn.textContent = '▶ Run';
+      }
+
+      function formatValue(val) {
+        if (val === null) return 'null';
+        if (val === undefined) return 'undefined';
+        if (typeof val === 'object') {
+          try {
+            return JSON.stringify(val, null, 2);
+          } catch (e) {
+            return String(val);
+          }
+        }
+        return String(val);
+      }
+
+      function appendOutput(text, type) {
+        const line = document.createElement('div');
+        line.className = 'playground__output-line' + (type ? ' playground__output-line--' + type : '');
+        line.textContent = text;
+        output.appendChild(line);
+        output.scrollTop = output.scrollHeight;
+      }
+
+      runBtn.addEventListener('click', runCode);
+    })();
+  </script>
+`;
   }
 
   return '<!DOCTYPE html>\n' +
@@ -1309,7 +1964,7 @@ export function renderFormulaPage(formula: Formula): string {
 '  <meta property="og:title" content="' + title + '">\n' +
 '  <meta property="og:description" content="' + description + '">\n' +
 '  <meta property="og:site_name" content="Schlussel">\n' +
-'  <meta property="og:image" content="https://schlussel.pepicrft.me/og/formulas/' + formula.id + '.png">\n' +
+'  <meta property="og:image" content="https://schlussel.me/og/formulas/' + formula.id + '.png">\n' +
 '  <meta property="og:image:width" content="1200">\n' +
 '  <meta property="og:image:height" content="630">\n' +
 '  <!-- Twitter -->\n' +
@@ -1317,7 +1972,7 @@ export function renderFormulaPage(formula: Formula): string {
 '  <meta name="twitter:url" content="' + url + '">\n' +
 '  <meta name="twitter:title" content="' + title + '">\n' +
 '  <meta name="twitter:description" content="' + description + '">\n' +
-'  <meta name="twitter:image" content="https://schlussel.pepicrft.me/og/formulas/' + formula.id + '.png">\n' +
+'  <meta name="twitter:image" content="https://schlussel.me/og/formulas/' + formula.id + '.png">\n' +
 '  <meta name="twitter:site" content="@pepicrft">\n' +
 '  <meta name="twitter:creator" content="@pepicrft">\n' +
 '  <!-- Additional SEO -->\n' +
@@ -1339,6 +1994,7 @@ export function renderFormulaPage(formula: Formula): string {
 '        <a href="/#features" class="nav__link">Features</a>\n' +
 '        <a href="/#how-it-works" class="nav__link">How it works</a>\n' +
 '        <a href="/#formulas" class="nav__link">Formulas</a>\n' +
+'        <a href="/skill" class="nav__link">SKILL.md</a>\n' +
 '        <a href="/api/formulas" class="nav__link">API</a>\n' +
 '        <a href="https://github.com/pepicrft/schlussel" class="nav__link">GitHub</a>\n' +
 '      </div>\n' +
@@ -1370,6 +2026,7 @@ export function renderFormulaPage(formula: Formula): string {
 '        </div>\n' +
 '      </div>\n' +
 '\n' +
+       playgroundHtml + '\n' +
 '      <a href="/#formulas" class="formula-back">← Back to all formulas</a>\n' +
 '    </div>\n' +
 '  </main>\n' +
@@ -1382,6 +2039,238 @@ export function renderFormulaPage(formula: Formula): string {
 '      </p>\n' +
 '    </div>\n' +
 '  </footer>\n' +
+       playgroundScript + '\n' +
+'</body>\n' +
+'</html>';
+}
+
+const skillPageCss = `
+.skill-page {
+  padding: var(--space-lg) 0;
+  min-height: calc(100vh - 200px);
+}
+
+.skill-header {
+  text-align: center;
+  margin-bottom: var(--space-lg);
+}
+
+.skill-header__title {
+  font-size: clamp(2rem, 5vw, 3rem);
+  margin-bottom: var(--space-sm);
+}
+
+.skill-header__desc {
+  font-size: 1.1rem;
+  max-width: 700px;
+  margin: 0 auto var(--space-md);
+  opacity: 0.9;
+}
+
+.skill-content {
+  background: var(--white);
+  padding: var(--space-lg);
+  border-radius: 20px;
+  border: var(--border-thick);
+  box-shadow: var(--shadow-cartoon-lg);
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.skill-content h1 {
+  display: none;
+}
+
+.skill-content h2 {
+  font-size: 1.5rem;
+  margin-top: var(--space-md);
+  margin-bottom: var(--space-sm);
+  padding-bottom: var(--space-xs);
+  border-bottom: 3px solid var(--yellow);
+}
+
+.skill-content h3 {
+  font-size: 1.2rem;
+  margin-top: var(--space-sm);
+  margin-bottom: var(--space-xs);
+}
+
+.skill-content p {
+  margin-bottom: var(--space-sm);
+}
+
+.skill-content ul, .skill-content ol {
+  margin-bottom: var(--space-sm);
+  padding-left: var(--space-md);
+}
+
+.skill-content li {
+  margin-bottom: var(--space-xs);
+}
+
+.skill-content pre {
+  margin: var(--space-sm) 0;
+}
+
+.skill-copy-section {
+  text-align: center;
+  margin-top: var(--space-lg);
+  padding-top: var(--space-md);
+  border-top: 2px dashed var(--dark);
+}
+
+.skill-copy-section p {
+  margin-bottom: var(--space-sm);
+  font-size: 1rem;
+  opacity: 0.85;
+}
+
+.skill-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--yellow);
+  border: var(--border-thick);
+  border-radius: 12px;
+  box-shadow: var(--shadow-cartoon);
+  font-family: 'Fredoka', sans-serif;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.skill-copy-btn:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: var(--shadow-hover);
+}
+
+.skill-copy-btn:active {
+  transform: translate(0, 0);
+  box-shadow: 2px 2px 0px var(--dark);
+}
+
+.skill-raw-link {
+  display: inline-block;
+  margin-left: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--white);
+  border: var(--border-thick);
+  border-radius: 12px;
+  box-shadow: var(--shadow-cartoon);
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.skill-raw-link:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: var(--shadow-hover);
+  color: var(--dark);
+}
+`;
+
+export function renderSkillPage(markdown: string): string {
+  const title = 'Schlussel Skill - Agent Instructions';
+  const description = 'Instructions for agents to use Schlussel, the authentication runtime. Copy this into your agent configuration.';
+  const url = 'https://schlussel.me/skill';
+
+  const htmlContent = marked.parse(markdown);
+
+  return '<!DOCTYPE html>\n' +
+'<html lang="en">\n' +
+'<head>\n' +
+'  <meta charset="UTF-8">\n' +
+'  <meta name="viewport" content="width=device-width, initial-scale=1.0">\n' +
+'  <title>' + title + '</title>\n' +
+'  <meta name="description" content="' + description + '">\n' +
+'  <meta name="keywords" content="authentication, oauth, agents, cli, runtime, skill, instructions">\n' +
+'  <meta name="author" content="Pedro Pinera">\n' +
+'  <link rel="canonical" href="' + url + '">\n' +
+'  <link rel="icon" type="image/png" href="/favicon.png">\n' +
+'  <!-- Open Graph / Facebook -->\n' +
+'  <meta property="og:type" content="article">\n' +
+'  <meta property="og:url" content="' + url + '">\n' +
+'  <meta property="og:title" content="' + title + '">\n' +
+'  <meta property="og:description" content="' + description + '">\n' +
+'  <meta property="og:site_name" content="Schlussel">\n' +
+'  <meta property="og:image" content="https://schlussel.me/og/skill.png">\n' +
+'  <meta property="og:image:width" content="1200">\n' +
+'  <meta property="og:image:height" content="630">\n' +
+'  <!-- Twitter -->\n' +
+'  <meta name="twitter:card" content="summary_large_image">\n' +
+'  <meta name="twitter:url" content="' + url + '">\n' +
+'  <meta name="twitter:title" content="' + title + '">\n' +
+'  <meta name="twitter:description" content="' + description + '">\n' +
+'  <meta name="twitter:image" content="https://schlussel.me/og/skill.png">\n' +
+'  <meta name="twitter:site" content="@pepicrft">\n' +
+'  <meta name="twitter:creator" content="@pepicrft">\n' +
+'  <!-- Additional SEO -->\n' +
+'  <meta name="robots" content="index, follow">\n' +
+'  <link rel="preconnect" href="https://fonts.googleapis.com">\n' +
+'  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n' +
+'  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">\n' +
+'  <style>' + css + skillPageCss + '</style>\n' +
+'</head>\n' +
+'<body>\n' +
+'  <nav class="nav">\n' +
+'    <div class="container nav__inner">\n' +
+'      <a href="/" class="nav__brand">\n' +
+'        <span class="nav__key">🔑</span>\n' +
+'        <span>schlussel</span>\n' +
+'      </a>\n' +
+'      <div class="nav__links">\n' +
+'        <a href="/#features" class="nav__link">Features</a>\n' +
+'        <a href="/#how-it-works" class="nav__link">How it works</a>\n' +
+'        <a href="/#formulas" class="nav__link">Formulas</a>\n' +
+'        <a href="/skill" class="nav__link">SKILL.md</a>\n' +
+'        <a href="/api/formulas" class="nav__link">API</a>\n' +
+'        <a href="https://github.com/pepicrft/schlussel" class="nav__link">GitHub</a>\n' +
+'      </div>\n' +
+'    </div>\n' +
+'  </nav>\n' +
+'\n' +
+'  <main class="skill-page">\n' +
+'    <div class="container">\n' +
+'      <div class="skill-header">\n' +
+'        <h1 class="skill-header__title">Agent Skill</h1>\n' +
+'        <p class="skill-header__desc">\n' +
+'          Copy these instructions into your agent configuration to enable Schlussel authentication.\n' +
+'        </p>\n' +
+'      </div>\n' +
+'      <div class="skill-content" id="skill-content">\n' +
+'        ' + htmlContent + '\n' +
+'      </div>\n' +
+'      <div class="skill-copy-section">\n' +
+'        <p>Copy the raw markdown for use in your agent configuration:</p>\n' +
+'        <button class="skill-copy-btn" id="copy-btn">Copy Markdown</button>\n' +
+'        <a href="/skill.md" class="skill-raw-link">View Raw</a>\n' +
+'      </div>\n' +
+'    </div>\n' +
+'  </main>\n' +
+'\n' +
+'  <footer class="footer">\n' +
+'    <div class="container">\n' +
+'      <p>\n' +
+'        Made with love by <a href="https://pepicrft.me">Pedro Pinera</a>.\n' +
+'        Licensed under MIT.\n' +
+'      </p>\n' +
+'    </div>\n' +
+'  </footer>\n' +
+'  <script>\n' +
+'    const markdown = ' + JSON.stringify(markdown) + ';\n' +
+'    const copyBtn = document.getElementById("copy-btn");\n' +
+'    copyBtn.addEventListener("click", async () => {\n' +
+'      try {\n' +
+'        await navigator.clipboard.writeText(markdown);\n' +
+'        copyBtn.textContent = "Copied!";\n' +
+'        setTimeout(() => { copyBtn.textContent = "Copy Markdown"; }, 2000);\n' +
+'      } catch (err) {\n' +
+'        copyBtn.textContent = "Failed to copy";\n' +
+'        setTimeout(() => { copyBtn.textContent = "Copy Markdown"; }, 2000);\n' +
+'      }\n' +
+'    });\n' +
+'  </script>\n' +
 '</body>\n' +
 '</html>';
 }

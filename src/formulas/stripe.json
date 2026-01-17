@@ -1,0 +1,60 @@
+{
+  "schema": "v2",
+  "id": "stripe",
+  "label": "Stripe",
+  "description": "Authenticate with Stripe using MCP OAuth with dynamic client registration or API keys. Access the Stripe API for payments, subscriptions, and financial data.",
+  "apis": {
+    "rest": {
+      "base_url": "https://api.stripe.com/v1",
+      "auth_header": "Authorization: Bearer {token}",
+      "docs_url": "https://docs.stripe.com/api",
+      "spec_url": "https://raw.githubusercontent.com/stripe/openapi/master/openapi/spec3.json",
+      "spec_type": "openapi",
+      "methods": ["api_key"]
+    },
+    "mcp": {
+      "base_url": "https://mcp.stripe.com",
+      "auth_header": "Authorization: Bearer {token}",
+      "docs_url": "https://docs.stripe.com/mcp",
+      "methods": ["mcp_oauth"]
+    }
+  },
+  "identity": {
+    "label": "Account",
+    "hint": "e.g., personal, work, test"
+  },
+  "methods": {
+    "mcp_oauth": {
+      "label": "MCP OAuth",
+      "endpoints": {
+        "registration": "https://access.stripe.com/mcp/oauth2/register",
+        "authorize": "https://access.stripe.com/mcp/oauth2/authorize",
+        "token": "https://access.stripe.com/mcp/oauth2/token"
+      },
+      "dynamic_registration": {
+        "client_name": "schlussel",
+        "grant_types": ["authorization_code", "refresh_token"],
+        "response_types": ["code"],
+        "token_endpoint_auth_method": "none"
+      },
+      "script": [
+        { "type": "open_url", "value": "{authorize_url}" },
+        { "type": "wait_for_callback" }
+      ]
+    },
+    "api_key": {
+      "label": "API Key",
+      "register": {
+        "url": "https://dashboard.stripe.com/apikeys",
+        "steps": [
+          "Go to Developers > API keys in your Stripe Dashboard",
+          "Create a new restricted key with the permissions you need",
+          "Copy the secret key (starts with sk_live_ or sk_test_)"
+        ]
+      },
+      "script": [
+        { "type": "copy_key", "note": "Paste your Stripe API key" }
+      ]
+    }
+  }
+}

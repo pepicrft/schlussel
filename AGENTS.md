@@ -7,6 +7,7 @@ Schlussel is a cross-platform OAuth 2.0 library with PKCE and Device Code Flow s
 ## Website Notes
 
 - Keep the example formula snippet in `website/theme/layouts/index.liquid` aligned with the JSON schema and the current contents of `src/formulas/claude.json`.
+- Keep the skill page (`website/src/skill.md`) up to date when modifying formula schemas or the CLI interface. This file serves as agent instructions and is accessible at https://schlussel.me/skill.md
 
 ## Core Architecture
 

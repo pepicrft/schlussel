@@ -3,5 +3,11 @@ main = "src/index.ts"
 compatibility_date = "2024-01-01"
 
 routes = [
-  { pattern = "schlussel.pepicrft.me", custom_domain = true }
+  { pattern = "schlussel.me", custom_domain = true }
 ]
+
+# Custom rules for bundling
+[[rules]]
+type = "Text"
+globs = ["**/*.md"]
+fallthrough = true

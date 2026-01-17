@@ -9,7 +9,8 @@
       "auth_header": "Authorization: Bearer {token}",
       "docs_url": "https://docs.github.com/en/rest",
       "spec_url": "https://raw.githubusercontent.com/github/rest-api-description/main/descriptions/api.github.com/api.github.com.json",
-      "spec_type": "openapi"
+      "spec_type": "openapi",
+      "example_endpoint": "/user"
     },
     "graphql": {
       "base_url": "https://api.github.com/graphql",

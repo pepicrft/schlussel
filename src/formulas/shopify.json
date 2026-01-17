@@ -1,0 +1,54 @@
+{
+  "schema": "v2",
+  "id": "shopify",
+  "label": "Shopify",
+  "description": "Authenticate with Shopify using OAuth device code flow. Access the Partners API, Admin API, and other Shopify services for app development and store management.",
+  "apis": {
+    "partners": {
+      "base_url": "https://partners.shopify.com/api",
+      "auth_header": "Authorization: Bearer {token}",
+      "docs_url": "https://shopify.dev/docs/api/partner",
+      "methods": ["device_code"]
+    },
+    "admin": {
+      "base_url": "https://{store}.myshopify.com/admin/api/2024-01",
+      "auth_header": "X-Shopify-Access-Token: {token}",
+      "docs_url": "https://shopify.dev/docs/api/admin",
+      "spec_type": "graphql",
+      "methods": ["device_code"],
+      "variables": {
+        "store": {
+          "label": "Store",
+          "hint": "The myshopify.com subdomain",
+          "example": "my-store"
+        }
+      }
+    }
+  },
+  "clients": [
+    {
+      "name": "shopify-cli",
+      "id": "fbdb2649-e327-4907-8f67-908d24cfd7e3",
+      "source": "https://github.com/Shopify/cli",
+      "methods": ["device_code"]
+    }
+  ],
+  "identity": {
+    "label": "Account",
+    "hint": "e.g., personal, work"
+  },
+  "methods": {
+    "device_code": {
+      "endpoints": {
+        "device": "https://accounts.shopify.com/oauth/device_authorization",
+        "token": "https://accounts.shopify.com/oauth/token"
+      },
+      "scope": "openid https://api.shopify.com/auth/partners.app.cli.access",
+      "script": [
+        { "type": "open_url", "value": "{verification_uri_complete}" },
+        { "type": "enter_code", "value": "{user_code}" },
+        { "type": "wait_for_token" }
+      ]
+    }
+  }
+}
