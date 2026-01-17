@@ -632,7 +632,8 @@ export function renderHomepage(): string {
 '  <meta name="twitter:title" content="' + title + '">\n' +
 '  <meta name="twitter:description" content="' + description + '">\n' +
 '  <meta name="twitter:image" content="' + url + '/og.png">\n' +
-'  <meta name="twitter:creator" content="@peabortsm">\n' +
+'  <meta name="twitter:site" content="@pepicrft">\n' +
+'  <meta name="twitter:creator" content="@pepicrft">\n' +
 '  <!-- Additional SEO -->\n' +
 '  <meta name="robots" content="index, follow">\n' +
 '  <meta name="googlebot" content="index, follow">\n' +
@@ -1217,7 +1218,8 @@ export function renderFormulaPage(formula: Formula): string {
 '  <meta name="twitter:title" content="' + title + '">\n' +
 '  <meta name="twitter:description" content="' + description + '">\n' +
 '  <meta name="twitter:image" content="https://schlussel.pepicrft.me/og/formulas/' + formula.id + '.png">\n' +
-'  <meta name="twitter:creator" content="@peabortsm">\n' +
+'  <meta name="twitter:site" content="@pepicrft">\n' +
+'  <meta name="twitter:creator" content="@pepicrft">\n' +
 '  <!-- Additional SEO -->\n' +
 '  <meta name="robots" content="index, follow">\n' +
 '  <meta name="googlebot" content="index, follow">\n' +
