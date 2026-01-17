@@ -76,6 +76,12 @@ zig build test
 zig fmt --check src/
 ```
 
+### Adding a new formula
+
+1. Create a JSON file in `src/formulas/` (use existing formulas as reference)
+2. Run `zig build test` to validate the schema
+3. Submit a pull request
+
 ## 📄 License
 
 See [LICENSE](LICENSE) for details.
