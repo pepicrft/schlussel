@@ -559,6 +559,58 @@ pre code {
   font-weight: 600;
 }
 
+.reflection {
+  padding: var(--space-xl) 0;
+  background: var(--white);
+  border-top: var(--border-thick);
+  border-bottom: var(--border-thick);
+}
+
+.reflection__content {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.reflection__title {
+  font-size: clamp(1.8rem, 4vw, 2.5rem);
+  margin-bottom: var(--space-md);
+  text-align: center;
+}
+
+.reflection__text {
+  font-size: 1.1rem;
+  line-height: 1.8;
+  margin-bottom: var(--space-md);
+}
+
+.reflection__text:last-of-type {
+  margin-bottom: 0;
+}
+
+.reflection__highlight {
+  background: var(--yellow-light);
+  padding: 0.1em 0.3em;
+  border-radius: 4px;
+  border: 2px solid var(--dark);
+}
+
+.reflection__quote {
+  background: var(--cream);
+  padding: var(--space-md);
+  border-radius: 16px;
+  border: var(--border);
+  margin: var(--space-md) 0;
+  font-style: italic;
+}
+
+.reflection__quote-source {
+  display: block;
+  margin-top: var(--space-sm);
+  font-style: normal;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
 @media (max-width: 768px) {
   :root {
     --space-lg: 3rem;
@@ -777,6 +829,41 @@ export function renderHomepage(): string {
 '              </p>\n' +
 '            </div>\n' +
 '          </div>\n' +
+'        </div>\n' +
+'      </div>\n' +
+'    </section>\n' +
+'\n' +
+'    <section class="reflection" id="why">\n' +
+'      <div class="container">\n' +
+'        <div class="reflection__content">\n' +
+'          <h2 class="reflection__title">The Narrow Waist for Agents</h2>\n' +
+'          <p class="reflection__text">\n' +
+'            Not every service on the internet exposes an API. Many are hesitant, watching how\n' +
+'            a new layer of agentic applications and LLMs might extract value from their platforms\n' +
+'            the same way tech giants once built empires on top of telecommunications infrastructure.\n' +
+'            The fear is real: become the "dumb pipe" while others capture the margin.\n' +
+'          </p>\n' +
+'          <div class="reflection__quote">\n' +
+'            "The Internet is the first thing that humanity has built that humanity does not understand,\n' +
+'            the largest experiment in anarchy that we have ever had."\n' +
+'            <span class="reflection__quote-source">- Eric Schmidt</span>\n' +
+'          </div>\n' +
+'          <p class="reflection__text">\n' +
+'            But this tension is not new. TCP/IP became the <span class="reflection__highlight">narrow waist</span>\n' +
+'            of networking, a simple contract that enabled everything above and below it to evolve independently.\n' +
+'            The shipping container standardized global trade. HTTP standardized the web.\n' +
+'            Each time, the "dumb" layer unlocked exponential value for everyone.\n' +
+'          </p>\n' +
+'          <p class="reflection__text">\n' +
+'            Agents talking to APIs is inevitable. The question is not if, but how.\n' +
+'            Schlussel is our bet on what that narrow waist looks like: a simple contract\n' +
+'            where authentication flows are codified in portable formulas, sessions are managed\n' +
+'            locally, and every agent speaks the same language to every API.\n' +
+'          </p>\n' +
+'          <p class="reflection__text">\n' +
+'            We are not building a platform. We are building <span class="reflection__highlight">the shipping container</span>\n' +
+'            between agents and the services they need to access.\n' +
+'          </p>\n' +
 '        </div>\n' +
 '      </div>\n' +
 '    </section>\n' +
