@@ -1,10 +1,18 @@
-# Schlussel
+# 🔑 Schlussel
 
 **Authentication runtime for agents and CLI applications**
 
 Authenticate with APIs without copying tokens or managing credentials manually. Schlussel handles OAuth flows, token storage, and automatic refresh so you can focus on building.
 
-## Installation
+## ✨ Features
+
+- 🔐 **Multiple OAuth methods** - Device code flow, authorization code with PKCE
+- 🛡️ **Secure storage** - Tokens stored in OS credential manager (Keychain, Credential Manager, libsecret)
+- 🔄 **Automatic refresh** - OAuth2 tokens are refreshed automatically when expired
+- 🔒 **Cross-process safe** - Multiple processes can safely access and refresh tokens
+- 🌍 **Cross-platform** - Linux, macOS, Windows on x86_64 and ARM64
+
+## 📦 Installation
 
 Install via [mise](https://mise.jdx.dev/):
 
@@ -12,7 +20,7 @@ Install via [mise](https://mise.jdx.dev/):
 mise use -g github:pepicrft/schlussel
 ```
 
-## Usage
+## 🚀 Usage
 
 ### Authenticate with a service
 
@@ -42,15 +50,7 @@ schlussel token list --formula github
 schlussel token delete --formula github --method device_code --identity personal
 ```
 
-## Features
-
-- **Multiple OAuth methods** - Device code flow, authorization code with PKCE
-- **Secure storage** - Tokens stored in OS credential manager (Keychain, Credential Manager, libsecret)
-- **Automatic refresh** - OAuth2 tokens are refreshed automatically when expired
-- **Cross-process safe** - Multiple processes can safely access and refresh tokens
-- **Cross-platform** - Linux, macOS, Windows on x86_64 and ARM64
-
-## Available Services
+## 🔌 Available Services
 
 Query the API for available formulas:
 
@@ -64,11 +64,11 @@ Or get details for a specific service:
 curl https://schlussel.me/api/formulas/github
 ```
 
-## Documentation
+## 📚 Documentation
 
 Full documentation available at [schlussel.me/docs](https://schlussel.me/docs)
 
-## Contributing
+## 🤝 Contributing
 
 Contributions welcome! Please ensure tests pass and code is formatted:
 
@@ -77,6 +77,6 @@ zig build test
 zig fmt --check src/
 ```
 
-## License
+## 📄 License
 
 See [LICENSE](LICENSE) for details.
