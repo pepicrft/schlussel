@@ -267,6 +267,11 @@ pub const Token = struct {
             }
         }
 
+        if (token.expires_at == null and token.expires_in != null) {
+            const now = @as(u64, @intCast(std.time.timestamp()));
+            token.expires_at = now + token.expires_in.?;
+        }
+
         return token;
     }
 };
@@ -650,7 +655,8 @@ pub const SecureStorage = struct {
 
     fn exists(ptr: *anyopaque, key: []const u8) bool {
         const self: *SecureStorage = @ptrCast(@alignCast(ptr));
-        _ = loadCredential(self.allocator, self.service_name, key) catch return false;
+        const data = loadCredential(self.allocator, self.service_name, key) catch return false;
+        self.allocator.free(data);
         return true;
     }
 
@@ -988,6 +994,28 @@ test "Token JSON serialization roundtrip" {
     try std.testing.expectEqualStrings(original.token_type, restored.token_type);
     try std.testing.expectEqualStrings(original.refresh_token.?, restored.refresh_token.?);
     try std.testing.expectEqualStrings(original.scope.?, restored.scope.?);
+}
+
+test "Token JSON restores expires_at when missing" {
+    const allocator = std.testing.allocator;
+
+    var original = try Token.init(allocator, "access123", "Bearer");
+    defer original.deinit();
+
+    original.expires_in = 3600;
+
+    const json_data = try original.toJson(allocator);
+    defer allocator.free(json_data);
+
+    const before = @as(u64, @intCast(std.time.timestamp()));
+    var restored = try Token.fromJson(allocator, json_data);
+    defer restored.deinit();
+    const after = @as(u64, @intCast(std.time.timestamp()));
+
+    try std.testing.expect(restored.expires_at != null);
+    const expires_at = restored.expires_at.?;
+    try std.testing.expect(expires_at >= before + 3600);
+    try std.testing.expect(expires_at <= after + 3600);
 }
 
 test "MemoryStorage save and load" {
