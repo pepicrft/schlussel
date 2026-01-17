@@ -23,7 +23,7 @@ pub const ScriptRegister = struct {
 };
 
 pub const ScriptStep = struct {
-    @"type": []const u8,
+    type: []const u8,
     value: ?[]const u8,
     note: ?[]const u8,
 };
@@ -226,9 +226,13 @@ const cloudflare_json = @embedFile("formulas/cloudflare.json");
 const shopify_json = @embedFile("formulas/shopify.json");
 const gitlab_json = @embedFile("formulas/gitlab.json");
 const stripe_json = @embedFile("formulas/stripe.json");
+const azure_json = @embedFile("formulas/azure.json");
+const gcloud_json = @embedFile("formulas/gcloud.json");
+const docker_json = @embedFile("formulas/docker.json");
+const vercel_json = @embedFile("formulas/vercel.json");
 
 var builtin_formulas_loaded = false;
-var builtin_formulas: [8]FormulaOwned = undefined;
+var builtin_formulas: [12]FormulaOwned = undefined;
 
 pub fn findById(allocator: Allocator, id: []const u8) !?*const Formula {
     if (!builtin_formulas_loaded) {
@@ -251,6 +255,10 @@ fn loadBuiltinFormulas(allocator: Allocator) !void {
     builtin_formulas[5] = try loadFromJsonSlice(allocator, shopify_json);
     builtin_formulas[6] = try loadFromJsonSlice(allocator, gitlab_json);
     builtin_formulas[7] = try loadFromJsonSlice(allocator, stripe_json);
+    builtin_formulas[8] = try loadFromJsonSlice(allocator, azure_json);
+    builtin_formulas[9] = try loadFromJsonSlice(allocator, gcloud_json);
+    builtin_formulas[10] = try loadFromJsonSlice(allocator, docker_json);
+    builtin_formulas[11] = try loadFromJsonSlice(allocator, vercel_json);
 }
 
 pub fn deinitBuiltinFormulas() void {
@@ -353,7 +361,7 @@ fn parseScriptSteps(allocator: Allocator, value: json.Value) ![]const ScriptStep
         };
 
         slice[idx] = ScriptStep{
-            .@"type" = try expectString(obj.get("type") orelse return Error.MissingField),
+            .type = try expectString(obj.get("type") orelse return Error.MissingField),
             .value = try optionalString(obj.get("value")),
             .note = try optionalString(obj.get("note")),
         };

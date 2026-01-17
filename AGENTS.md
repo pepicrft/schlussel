@@ -8,6 +8,7 @@ Schlussel is a cross-platform OAuth 2.0 library with PKCE and Device Code Flow s
 
 - Keep the example formula snippet in `website/theme/layouts/index.liquid` aligned with the JSON schema and the current contents of `src/formulas/claude.json`.
 - Keep the skill page (`website/src/skill.md`) up to date when modifying formula schemas or the CLI interface. This file serves as agent instructions and is accessible at https://schlussel.me/skill.md
+- Keep the documentation page (`website/src/html.ts` - `renderDocsPage` function) up to date when modifying the formula schema or CLI interface. The docs page documents the formula specification and CLI commands at https://schlussel.me/docs
 
 ## Core Architecture
 
@@ -60,6 +61,17 @@ Schlussel is a cross-platform OAuth 2.0 library with PKCE and Device Code Flow s
 - Use `const` by default
 - Document public APIs with doc comments (`///`)
 - Add examples to doc comments
+
+### Commits
+
+Follow the [Conventional Commits](https://www.conventionalcommits.org/) specification for commit messages:
+- `feat:` for new features
+- `fix:` for bug fixes
+- `docs:` for documentation changes
+- `style:` for formatting changes
+- `refactor:` for code refactoring
+- `test:` for adding or updating tests
+- `chore:` for maintenance tasks
 
 ### Testing
 

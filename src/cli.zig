@@ -23,6 +23,7 @@ const registration = @import("registration.zig");
 const formulas = @import("formulas.zig");
 const callback = @import("callback.zig");
 const pkce = @import("pkce.zig");
+const lock = @import("lock.zig");
 
 /// ANSI color codes for terminal output
 const Color = struct {
@@ -41,7 +42,13 @@ const Color = struct {
 /// Check if colors should be enabled based on NO_COLOR env var and TTY detection
 fn colorsEnabled() bool {
     // Respect NO_COLOR convention (https://no-color.org/)
-    if (std.posix.getenv("NO_COLOR")) |_| {
+    // Use different API for Windows vs POSIX
+    const no_color_set = if (@import("builtin").os.tag == .windows)
+        std.process.getenvW(std.unicode.utf8ToUtf16LeStringLiteral("NO_COLOR")) != null
+    else
+        std.posix.getenv("NO_COLOR") != null;
+
+    if (no_color_set) {
         return false;
     }
     // Check if stdout is a TTY
@@ -187,7 +194,7 @@ fn expandScriptSteps(
         }
 
         steps_out[idx] = .{
-            .@"type" = step.@"type",
+            .type = step.type,
             .value = value_out,
             .note = note_out,
         };
@@ -215,16 +222,16 @@ fn resolveScriptSteps(
 
     // Default steps based on method type
     const default_device_steps = [_]formulas.ScriptStep{
-        .{ .@"type" = "open_url", .value = "{verification_uri}", .note = null },
-        .{ .@"type" = "enter_code", .value = "{user_code}", .note = null },
-        .{ .@"type" = "wait_for_token", .value = null, .note = null },
+        .{ .type = "open_url", .value = "{verification_uri}", .note = null },
+        .{ .type = "enter_code", .value = "{user_code}", .note = null },
+        .{ .type = "wait_for_token", .value = null, .note = null },
     };
     const default_code_steps = [_]formulas.ScriptStep{
-        .{ .@"type" = "open_url", .value = "{authorize_url}", .note = null },
-        .{ .@"type" = "wait_for_callback", .value = null, .note = null },
+        .{ .type = "open_url", .value = "{authorize_url}", .note = null },
+        .{ .type = "wait_for_callback", .value = null, .note = null },
     };
     const default_api_key_steps = [_]formulas.ScriptStep{
-        .{ .@"type" = "copy_key", .value = null, .note = "Paste your API key into the agent." },
+        .{ .type = "copy_key", .value = null, .note = "Paste your API key into the agent." },
     };
 
     // Use method's script if available, otherwise use defaults based on method type
@@ -425,6 +432,7 @@ const run_params = clap.parseParamsComptime(
     \\-i, --identity <str>            Identity label for storage key.
     \\    --open-browser <str>        Open the authorization URL (true/false, default: true).
     \\-j, --json                      Emit machine-readable JSON output.
+    \\-n, --dry-run                   Show auth steps without executing them.
     \\<str>                           Provider name.
     \\
 );
@@ -452,7 +460,12 @@ const script_params = clap.parseParamsComptime(
 
 const token_params = clap.parseParamsComptime(
     \\-h, --help                      Display this help and exit.
-    \\-k, --key <str>                 Token storage key.
+    \\-k, --key <str>                 Token storage key (e.g., github:device_code:personal).
+    \\    --formula <str>             Filter by formula ID (e.g., github).
+    \\    --method <str>              Filter by auth method (e.g., device_code).
+    \\    --identity <str>            Filter by identity label (e.g., personal).
+    \\    --refresh                   Auto-refresh OAuth2 tokens if expired/expiring.
+    \\-j, --json                      Output as JSON.
     \\<str>                           Action (get, list, delete).
     \\
 );
@@ -615,6 +628,7 @@ fn cmdRun(allocator: Allocator, args: []const []const u8, stdout: anytype, stder
     const credential_override = res.args.credential;
     const identity_override = res.args.identity;
     const json_output = res.args.json != 0;
+    const dry_run = res.args.@"dry-run" != 0;
 
     var open_browser = true;
     if (res.args.@"open-browser") |value| {
@@ -845,7 +859,7 @@ fn cmdRun(allocator: Allocator, args: []const []const u8, stdout: anytype, stder
             try info_out.print("\nScript steps:\n", .{});
         }
         for (script_steps, 0..) |step, idx| {
-            const friendly_name = friendlyStepName(step.@"type");
+            const friendly_name = friendlyStepName(step.type);
             if (use_color) {
                 if (step.note) |note| {
                     try info_out.print("  {s}{d}.{s} {s} {s}({s}){s}\n", .{ Color.cyan, idx + 1, Color.reset, friendly_name, Color.dim, note, Color.reset });
@@ -860,6 +874,63 @@ fn cmdRun(allocator: Allocator, args: []const []const u8, stdout: anytype, stder
                 }
             }
         }
+    }
+
+    // Dry run mode: show what would happen without executing
+    if (dry_run) {
+        if (method.isDeviceCode()) {
+            const verification_uri = context.verification_uri orelse {
+                try stderr.print("Error: script context missing verification_uri\n", .{});
+                return error.InvalidParameter;
+            };
+            const user_code = context.user_code orelse {
+                try stderr.print("Error: script context missing user_code\n", .{});
+                return error.InvalidParameter;
+            };
+
+            if (use_color) {
+                try stdout.print("\n{s}[DRY RUN]{s} Would authorize via device code:\n", .{ Color.bold_yellow, Color.reset });
+                try stdout.print("  {s}Verification URL:{s} {s}{s}{s}\n", .{ Color.dim, Color.reset, Color.cyan, verification_uri, Color.reset });
+                try stdout.print("  {s}User code:{s} {s}{s}{s}\n", .{ Color.dim, Color.reset, Color.bold_yellow, user_code, Color.reset });
+                if (context.verification_uri_complete) |uri| {
+                    try stdout.print("  {s}Direct URL:{s} {s}{s}{s}\n", .{ Color.dim, Color.reset, Color.cyan, uri, Color.reset });
+                }
+                try stdout.print("\n{s}Token would be saved with key:{s} {s}{s}{s}\n", .{ Color.dim, Color.reset, Color.cyan, storage_key, Color.reset });
+            } else {
+                try stdout.print("\n[DRY RUN] Would authorize via device code:\n", .{});
+                try stdout.print("  Verification URL: {s}\n", .{verification_uri});
+                try stdout.print("  User code: {s}\n", .{user_code});
+                if (context.verification_uri_complete) |uri| {
+                    try stdout.print("  Direct URL: {s}\n", .{uri});
+                }
+                try stdout.print("\nToken would be saved with key: {s}\n", .{storage_key});
+            }
+        } else if (method.isAuthorizationCode()) {
+            const authorize_url = context.authorize_url orelse {
+                try stderr.print("Error: script context missing authorize_url\n", .{});
+                return error.InvalidParameter;
+            };
+
+            if (use_color) {
+                try stdout.print("\n{s}[DRY RUN]{s} Would authorize via browser:\n", .{ Color.bold_yellow, Color.reset });
+                try stdout.print("  {s}Authorization URL:{s}\n  {s}{s}{s}\n", .{ Color.dim, Color.reset, Color.cyan, authorize_url, Color.reset });
+                try stdout.print("\n{s}Token would be saved with key:{s} {s}{s}{s}\n", .{ Color.dim, Color.reset, Color.cyan, storage_key, Color.reset });
+            } else {
+                try stdout.print("\n[DRY RUN] Would authorize via browser:\n", .{});
+                try stdout.print("  Authorization URL:\n  {s}\n", .{authorize_url});
+                try stdout.print("\nToken would be saved with key: {s}\n", .{storage_key});
+            }
+        } else {
+            const label = method.label orelse "credential";
+            if (use_color) {
+                try stdout.print("\n{s}[DRY RUN]{s} Would prompt for: {s}{s}{s}\n", .{ Color.bold_yellow, Color.reset, Color.cyan, label, Color.reset });
+                try stdout.print("\n{s}Token would be saved with key:{s} {s}{s}{s}\n", .{ Color.dim, Color.reset, Color.cyan, storage_key, Color.reset });
+            } else {
+                try stdout.print("\n[DRY RUN] Would prompt for: {s}\n", .{label});
+                try stdout.print("\nToken would be saved with key: {s}\n", .{storage_key});
+            }
+        }
+        return;
     }
 
     if (method.isDeviceCode()) {
@@ -1263,7 +1334,7 @@ fn cmdScript(allocator: Allocator, args: []const []const u8, stdout: anytype, st
         try stdout.print("  \"method\": \"{s}\",\n", .{method_name});
         try stdout.print("  \"steps\": [\n", .{});
         for (resolved.steps, 0..) |step, idx| {
-            try stdout.print("    {{ \"type\": \"{s}\"", .{step.@"type"});
+            try stdout.print("    {{ \"type\": \"{s}\"", .{step.type});
             if (step.value) |v| try stdout.print(", \"value\": \"{s}\"", .{v});
             if (step.note) |n| try stdout.print(", \"note\": \"{s}\"", .{n});
             try stdout.print(" }}", .{});
@@ -1295,7 +1366,7 @@ fn cmdScript(allocator: Allocator, args: []const []const u8, stdout: anytype, st
         if (method.script) |script| {
             try stdout.print("  \"script\": [\n", .{});
             for (script, 0..) |step, idx| {
-                try stdout.print("    {{ \"type\": \"{s}\"", .{step.@"type"});
+                try stdout.print("    {{ \"type\": \"{s}\"", .{step.type});
                 if (step.value) |v| try stdout.print(", \"value\": \"{s}\"", .{v});
                 if (step.note) |n| try stdout.print(", \"note\": \"{s}\"", .{n});
                 try stdout.print(" }}", .{});

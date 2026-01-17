@@ -1025,7 +1025,7 @@ fn expandScriptSteps(
         }
 
         steps_out[idx] = .{
-            .@"type" = step.@"type",
+            .type = step.type,
             .value = value_out,
             .note = note_out,
         };
@@ -1050,16 +1050,16 @@ fn resolveScriptFromFormula(
     redirect_uri: []const u8,
 ) !ResolvedScript {
     const default_device_steps = [_]formulas.ScriptStep{
-        .{ .@"type" = "open_url", .value = "{verification_uri}", .note = null },
-        .{ .@"type" = "enter_code", .value = "{user_code}", .note = null },
-        .{ .@"type" = "wait_for_token", .value = null, .note = null },
+        .{ .type = "open_url", .value = "{verification_uri}", .note = null },
+        .{ .type = "enter_code", .value = "{user_code}", .note = null },
+        .{ .type = "wait_for_token", .value = null, .note = null },
     };
     const default_code_steps = [_]formulas.ScriptStep{
-        .{ .@"type" = "open_url", .value = "{authorize_url}", .note = null },
-        .{ .@"type" = "wait_for_callback", .value = null, .note = null },
+        .{ .type = "open_url", .value = "{authorize_url}", .note = null },
+        .{ .type = "wait_for_callback", .value = null, .note = null },
     };
     const default_api_key_steps = [_]formulas.ScriptStep{
-        .{ .@"type" = "copy_key", .value = null, .note = "Paste your API key into the agent." },
+        .{ .type = "copy_key", .value = null, .note = "Paste your API key into the agent." },
     };
 
     // Determine step source: method's script or defaults

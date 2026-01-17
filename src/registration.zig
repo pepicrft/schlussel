@@ -425,7 +425,7 @@ test "dynamic registration metadata JSON includes required and optional fields" 
 
     metadata.client_name = "Test App";
     metadata.redirect_uris = &[_][]const u8{"https://example.com/callback"};
-    metadata.grant_types = &[_][]const u8{"authorization_code", "refresh_token"};
+    metadata.grant_types = &[_][]const u8{ "authorization_code", "refresh_token" };
     metadata.response_types = &[_][]const u8{"code"};
     metadata.scope = try allocator.dupe(u8, "read write");
     metadata.token_endpoint_auth_method = try allocator.dupe(u8, "client_secret_basic");
