@@ -869,6 +869,12 @@ export function renderHomepage(): string {
 '            We are not building a platform. We are building <span class="reflection__highlight">the shipping container</span>\n' +
 '            between agents and the services they need to access.\n' +
 '          </p>\n' +
+'          <p class="reflection__text">\n' +
+'            If you are building a service, consider adopting <a href="https://datatracker.ietf.org/doc/html/rfc7591">OAuth 2.0 Dynamic Client Registration (RFC 7591)</a>\n' +
+'            and <a href="https://datatracker.ietf.org/doc/html/rfc8628">Device Authorization Grant (RFC 8628)</a>.\n' +
+'            These are the most agent-friendly standards: no browser redirects, no pre-registered clients,\n' +
+'            just a code on a screen and a polling loop. Perfect for headless environments where LLMs operate.\n' +
+'          </p>\n' +
 '        </div>\n' +
 '      </div>\n' +
 '    </section>\n' +
