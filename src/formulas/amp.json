@@ -1,0 +1,36 @@
+{
+  "schema": "v2",
+  "id": "amp",
+  "label": "Amp",
+  "description": "Authenticate with Amp (Sourcegraph's coding agent) using API keys. Access the Amp platform for AI-powered code generation and development workflows.",
+  "apis": {
+    "rest": {
+      "base_url": "https://ampcode.com",
+      "auth_header": "Authorization: Bearer {token}",
+      "docs_url": "https://ampcode.com/manual"
+    }
+  },
+  "identity": {
+    "label": "Account",
+    "hint": "e.g., personal, work"
+  },
+  "methods": {
+    "api_key": {
+      "register": {
+        "url": "https://ampcode.com/settings",
+        "steps": [
+          "Sign in to ampcode.com",
+          "Go to Settings",
+          "Copy your API key (starts with sgamp_user_)"
+        ]
+      },
+      "script": [
+        { "type": "copy_key", "note": "Paste your Amp API key" }
+      ]
+    }
+  },
+  "notes": {
+    "auth_flow": "Amp CLI uses a browser-based callback flow for authentication. The CLI opens https://ampcode.com/auth/cli-login with an auth token and starts a local HTTP server. After user authenticates in browser, the server receives the API key via callback. This is not OAuth 2.0 device code flow. For programmatic access, use the API key from ampcode.com/settings.",
+    "env_var": "Set AMP_API_KEY environment variable for non-interactive usage"
+  }
+}

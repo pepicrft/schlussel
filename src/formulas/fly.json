@@ -1,0 +1,39 @@
+{
+  "schema": "v2",
+  "id": "fly",
+  "label": "Fly.io",
+  "description": "Authenticate with Fly.io using API tokens. Access the Machines API for deploying and managing applications, machines, and volumes.",
+  "apis": {
+    "rest": {
+      "base_url": "https://api.machines.dev/v1",
+      "auth_header": "Authorization: Bearer {token}",
+      "docs_url": "https://fly.io/docs/machines/api/",
+      "spec_url": "https://docs.machines.dev/spec/openapi3.json",
+      "spec_type": "openapi",
+      "example_endpoint": "/apps"
+    }
+  },
+  "identity": {
+    "label": "Organization",
+    "hint": "e.g., personal, company-name"
+  },
+  "methods": {
+    "api_token": {
+      "register": {
+        "url": "https://fly.io/dashboard",
+        "steps": [
+          "Install flyctl and run 'fly auth login' to authenticate",
+          "Run 'fly tokens create org' for organization-level access",
+          "Or run 'fly tokens create deploy' for app-specific deploy tokens",
+          "Copy the generated token"
+        ]
+      },
+      "script": [
+        { "type": "copy_key", "note": "Paste your Fly.io API token" }
+      ]
+    }
+  },
+  "notes": {
+    "auth_flow": "Fly.io CLI uses a proprietary browser-based session flow, not OAuth 2.0 device code. The CLI creates a session via POST /api/v1/cli_sessions, opens a browser URL, and polls for the access token. For programmatic access, use API tokens created via 'fly tokens create'."
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "schema": "v2",
+  "id": "openrouter",
+  "label": "OpenRouter",
+  "description": "Authenticate with OpenRouter using OAuth PKCE or API keys. Access 400+ AI models through a unified OpenAI-compatible API.",
+  "apis": {
+    "rest": {
+      "base_url": "https://openrouter.ai/api/v1",
+      "auth_header": "Authorization: Bearer {token}",
+      "docs_url": "https://openrouter.ai/docs/api/reference/overview",
+      "example_endpoint": "/models"
+    }
+  },
+  "identity": {
+    "label": "Account",
+    "hint": "e.g., personal, work"
+  },
+  "methods": {
+    "oauth_pkce": {
+      "endpoints": {
+        "authorize": "https://openrouter.ai/auth",
+        "token": "https://openrouter.ai/api/v1/auth/keys"
+      },
+      "script": [
+        { "type": "open_url", "value": "{authorize_url}" },
+        { "type": "wait_for_callback" }
+      ]
+    },
+    "api_key": {
+      "register": {
+        "url": "https://openrouter.ai/keys",
+        "steps": [
+          "Sign in to OpenRouter",
+          "Go to Keys page",
+          "Create a new API key",
+          "Optionally set a credit limit",
+          "Copy the key"
+        ]
+      },
+      "script": [
+        { "type": "copy_key", "note": "Paste your OpenRouter API key" }
+      ]
+    }
+  },
+  "notes": {
+    "oauth_flow": "OpenRouter supports OAuth PKCE for secure user authentication. The flow uses callback_url parameter instead of redirect_uri. The token endpoint returns an API key, not a standard OAuth token. Only HTTPS URLs on ports 443 and 3000 are allowed for callbacks.",
+    "openai_compatible": "The API is OpenAI SDK compatible. Set base_url to https://openrouter.ai/api/v1"
+  }
+}

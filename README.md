@@ -7,7 +7,6 @@ Authenticate with APIs without copying tokens or managing credentials manually. 
 ## ✨ Features
 
 - 🔐 **Multiple OAuth methods** - Device code flow, authorization code with PKCE
-- 🛡️ **Secure storage** - Tokens stored in OS credential manager (Keychain, Credential Manager, libsecret)
 - 🔄 **Automatic refresh** - OAuth2 tokens are refreshed automatically when expired
 - 🔒 **Cross-process safe** - Multiple processes can safely access and refresh tokens
 - 🌍 **Cross-platform** - Linux, macOS, Windows on x86_64 and ARM64
