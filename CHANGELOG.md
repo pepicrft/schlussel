@@ -1,5 +1,12 @@
 
 
+### Fix
+
+- Windows build and code formatting by [@pepicrft](https://github.com/pepicrft)
+
+
+**Full Changelog**: https://github.com/pepicrft/schlussel/compare/0.8.0..0.8.1
+
 ### Feat
 
 - Expose Dynamic Client Registration in C FFI layer by [@pepicrft](https://github.com/pepicrft)
