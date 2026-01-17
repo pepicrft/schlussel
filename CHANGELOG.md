@@ -2,6 +2,17 @@
 
 ### Fix
 
+- Restore token expiry and avoid secure exists leak by [@pepicrft](https://github.com/pepicrft)
+
+### Style
+
+- Format cli by [@pepicrft](https://github.com/pepicrft)
+
+
+**Full Changelog**: https://github.com/pepicrft/schlussel/compare/0.8.2..0.8.3
+
+### Fix
+
 - Publish CLI binary instead of library for mise compatibility by [@pepicrft](https://github.com/pepicrft)
 
 
