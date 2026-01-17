@@ -68,10 +68,10 @@ jobs:
         run: echo "version=$(git cliff --bumped-version)" >> "$GITHUB_OUTPUT"
 
   # ===========================================================================
-  # Build native libraries for FFI
+  # Build CLI binaries
   # ===========================================================================
-  build-libraries:
-    name: Build library (${{ matrix.target }})
+  build-cli:
+    name: Build CLI (${{ matrix.target }})
     needs: check-release
     if: needs.check-release.outputs.should-release == 'true'
     runs-on: ubuntu-latest
@@ -79,38 +79,37 @@ jobs:
       matrix:
         include:
           - target: x86_64-linux
-            artifact: libschlussel-x86_64-linux
+            artifact: schlussel-x86_64-linux
           - target: aarch64-linux
-            artifact: libschlussel-aarch64-linux
+            artifact: schlussel-aarch64-linux
           - target: x86_64-macos
-            artifact: libschlussel-x86_64-macos
+            artifact: schlussel-x86_64-macos
           - target: aarch64-macos
-            artifact: libschlussel-aarch64-macos
+            artifact: schlussel-aarch64-macos
           - target: x86_64-windows
-            artifact: libschlussel-x86_64-windows
+            artifact: schlussel-x86_64-windows
+            ext: .exe
           - target: aarch64-windows
-            artifact: libschlussel-aarch64-windows
+            artifact: schlussel-aarch64-windows
+            ext: .exe
     steps:
       - uses: actions/checkout@v4
 
       - uses: jdx/mise-action@v2
 
-      - name: Build release library
+      - name: Build release binary
         run: zig build -Doptimize=ReleaseFast -Dtarget=${{ matrix.target }}
 
-      - name: Package library
+      - name: Package binary
         run: |
-          mkdir -p dist/${{ matrix.artifact }}
-          cp zig-out/lib/libschlussel.a dist/${{ matrix.artifact }}/ 2>/dev/null || true
-          cp zig-out/lib/schlussel.lib dist/${{ matrix.artifact }}/ 2>/dev/null || true
-          cp zig-out/include/schlussel.h dist/${{ matrix.artifact }}/ 2>/dev/null || true
-          cp include/schlussel.h dist/${{ matrix.artifact }}/ 2>/dev/null || true
-
+          mkdir -p dist
           cd dist
           if [[ "${{ matrix.target }}" == *"windows"* ]]; then
-            zip -r ${{ matrix.artifact }}.zip ${{ matrix.artifact }}
+            cp ../zig-out/bin/schlussel.exe schlussel.exe
+            zip ${{ matrix.artifact }}.zip schlussel.exe
           else
-            tar -czvf ${{ matrix.artifact }}.tar.gz ${{ matrix.artifact }}
+            cp ../zig-out/bin/schlussel schlussel
+            tar -czvf ${{ matrix.artifact }}.tar.gz schlussel
           fi
 
       - name: Upload artifact
@@ -129,7 +128,7 @@ jobs:
     name: Publish release
     needs:
       - check-release
-      - build-libraries
+      - build-cli
     if: needs.check-release.outputs.should-release == 'true'
     runs-on: ubuntu-latest
     permissions:
