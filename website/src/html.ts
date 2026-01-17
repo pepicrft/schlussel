@@ -843,6 +843,11 @@ export function renderHomepage(): string {
 '            the same way tech giants once built empires on top of telecommunications infrastructure.\n' +
 '            The fear is real: become the "dumb pipe" while others capture the margin.\n' +
 '          </p>\n' +
+'          <p class="reflection__text">\n' +
+'            Others do expose APIs, but they are not productized beyond their own SPAs.\n' +
+'            Browser-generated cookies, CORS restrictions, sessions tied to web flows.\n' +
+'            The API exists, but it was never meant for you. It was meant for their frontend.\n' +
+'          </p>\n' +
 '          <div class="reflection__quote">\n' +
 '            "The Internet is the first thing that humanity has built that humanity does not understand,\n' +
 '            the largest experiment in anarchy that we have ever had."\n' +
