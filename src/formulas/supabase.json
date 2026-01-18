@@ -1,0 +1,54 @@
+{
+  "schema": "v2",
+  "id": "supabase",
+  "label": "Supabase",
+  "description": "Authenticate with Supabase using service role keys or personal access tokens. Access database, auth, and storage APIs.",
+  "identity": {
+    "label": "Project",
+    "hint": "Project ID from your Supabase dashboard"
+  },
+  "methods": {
+    "service_role": {
+      "label": "Service Role Key",
+      "register": {
+        "url": "https://supabase.com/dashboard/project/_/settings/api",
+        "steps": [
+          "Go to Project Settings > API",
+          "Copy the service_role secret (bypasses RLS)"
+        ]
+      },
+      "script": [
+        { "type": "copy_key", "note": "Paste your Supabase service role key" }
+      ]
+    },
+    "anon_key": {
+      "label": "Anon Key",
+      "register": {
+        "url": "https://supabase.com/dashboard/project/_/settings/api",
+        "steps": [
+          "Go to Project Settings > API",
+          "Copy the anon public key"
+        ]
+      },
+      "script": [
+        { "type": "copy_key", "note": "Paste your Supabase anon key" }
+      ]
+    }
+  },
+  "apis": {
+    "rest": {
+      "base_url": "https://{project_id}.supabase.co/rest/v1",
+      "auth_header": "apikey: {token}",
+      "docs_url": "https://supabase.com/docs",
+      "spec_url": "https://{project_id}.supabase.co/rest/v1",
+      "spec_type": "openapi",
+      "methods": ["service_role", "anon_key"]
+    },
+    "gotrue": {
+      "base_url": "https://{project_id}.supabase.co/auth/v1",
+      "auth_header": "apikey: {token}",
+      "docs_url": "https://supabase.com/docs/auth",
+      "methods": ["anon_key"]
+    }
+  }
+}

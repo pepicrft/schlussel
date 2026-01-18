@@ -1,0 +1,36 @@
+{
+  "schema": "v2",
+  "id": "anthropic",
+  "label": "Anthropic",
+  "description": "Authenticate with Anthropic using API keys. Access Claude models via the Messages API.",
+  "identity": {
+    "label": "Account",
+    "hint": "e.g., personal"
+  },
+  "methods": {
+    "api_key": {
+      "label": "API Key",
+      "register": {
+        "url": "https://console.anthropic.com/settings/keys",
+        "steps": [
+          "Go to Settings > API Keys in Anthropic Console",
+          "Create a new API key",
+          "Copy the key"
+        ]
+      },
+      "script": [
+        { "type": "copy_key", "note": "Paste your Anthropic API key" }
+      ]
+    }
+  },
+  "apis": {
+    "rest": {
+      "base_url": "https://api.anthropic.com/v1",
+      "auth_header": "x-api-key: {token}",
+      "docs_url": "https://docs.anthropic.com",
+      "spec_url": "https://docs.anthropic.com/claude-reference/openapi",
+      "spec_type": "openapi",
+      "methods": ["api_key"]
+    }
+  }
+}

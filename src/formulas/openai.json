@@ -1,0 +1,37 @@
+{
+  "schema": "v2",
+  "id": "openai",
+  "label": "OpenAI",
+  "description": "Authenticate with OpenAI using API keys. Access GPT models, DALL-E, Whisper, and other OpenAI services.",
+  "identity": {
+    "label": "Organization",
+    "hint": "Optional: your org ID (leave empty for personal)"
+  },
+  "methods": {
+    "api_key": {
+      "label": "API Key",
+      "register": {
+        "url": "https://platform.openai.com/api-keys",
+        "steps": [
+          "Go to API keys in your OpenAI platform dashboard",
+          "Create a new secret key",
+          "Copy the key (starts with sk-)",
+          "Optional: Add organization ID if using org-based access"
+        ]
+      },
+      "script": [
+        { "type": "copy_key", "note": "Paste your OpenAI API key" }
+      ]
+    }
+  },
+  "apis": {
+    "rest": {
+      "base_url": "https://api.openai.com/v1",
+      "auth_header": "Authorization: Bearer {token}",
+      "docs_url": "https://platform.openai.com/docs",
+      "spec_url": "https://raw.githubusercontent.com/openai/openai-openapi/master/openapi.yaml",
+      "spec_type": "openapi",
+      "methods": ["api_key"]
+    }
+  }
+}

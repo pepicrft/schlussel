@@ -1,0 +1,68 @@
+{
+  "schema": "v2",
+  "id": "discord",
+  "label": "Discord",
+  "description": "Authenticate with Discord using OAuth authorization code flow. Access guilds, channels, and messages.",
+  "clients": [
+    {
+      "name": "discord-cli",
+      "id": "1234567890123456789",
+      "secret": "YOUR_CLIENT_SECRET",
+      "type": "public",
+      "source": "https://github.com/discord/discord-api-tools",
+      "methods": ["oauth"]
+    }
+  ],
+  "identity": {
+    "label": "Bot",
+    "hint": "e.g., personal, server name"
+  },
+  "methods": {
+    "oauth": {
+      "label": "OAuth",
+      "endpoints": {
+        "authorize": "https://discord.com/oauth2/authorize",
+        "token": "https://discord.com/api/oauth2/token"
+      },
+      "scope": "identify guilds messages.read",
+      "register": {
+        "url": "https://discord.com/developers/applications",
+        "steps": [
+          "Create a new application",
+          "Go to OAuth2 > URL Generator or General",
+          "Add redirect URI http://localhost:8080/callback",
+          "Copy Client ID and Client Secret"
+        ]
+      },
+      "script": [
+        { "type": "open_url", "value": "{authorize_url}" },
+        { "type": "wait_for_callback" }
+      ]
+    },
+    "bot": {
+      "label": "Bot Token",
+      "register": {
+        "url": "https://discord.com/developers/applications",
+        "steps": [
+          "Create or select a bot application",
+          "Go to Bot section",
+          "Click 'Reset Token' if needed",
+          "Copy the bot token"
+        ]
+      },
+      "script": [
+        { "type": "copy_key", "note": "Paste your Discord bot token" }
+      ]
+    }
+  },
+  "apis": {
+    "rest": {
+      "base_url": "https://discord.com/api/v10",
+      "auth_header": "Authorization: Bearer {token}",
+      "docs_url": "https://discord.com/developers/docs",
+      "spec_url": "https://raw.githubusercontent.com/discord/discord-api-docs/main/docs.json",
+      "spec_type": "openapi",
+      "methods": ["oauth", "bot"]
+    }
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "schema": "v2",
+  "id": "sendgrid",
+  "label": "SendGrid",
+  "description": "Authenticate with SendGrid using API keys. Access email sending and template management.",
+  "identity": {
+    "label": "Account",
+    "hint": "e.g., personal, subuser"
+  },
+  "methods": {
+    "api_key": {
+      "label": "API Key",
+      "register": {
+        "url": "https://app.sendgrid.com/settings/api_keys",
+        "steps": [
+          "Go to Settings > API Keys in SendGrid dashboard",
+          "Create a new API key with required permissions",
+          "Copy the API key"
+        ]
+      },
+      "script": [
+        { "type": "copy_key", "note": "Paste your SendGrid API key" }
+      ]
+    }
+  },
+  "apis": {
+    "rest": {
+      "base_url": "https://api.sendgrid.com/v3",
+      "auth_header": "Authorization: Bearer {token}",
+      "docs_url": "https://docs.sendgrid.com",
+      "spec_url": "https://raw.githubusercontent.com/sendgrid/sendgrid-oai/main/oai.json",
+      "spec_type": "openapi",
+      "methods": ["api_key"]
+    }
+  }
+}

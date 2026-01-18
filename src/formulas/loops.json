@@ -1,0 +1,36 @@
+{
+  "schema": "v2",
+  "id": "loops",
+  "label": "Loops.so",
+  "description": "Authenticate with Loops.so using API keys. Access email marketing and event tracking APIs.",
+  "identity": {
+    "label": "Account",
+    "hint": "e.g., personal, workspace name"
+  },
+  "methods": {
+    "api_key": {
+      "label": "API Key",
+      "register": {
+        "url": "https://app.loops.so/settings/api",
+        "steps": [
+          "Go to Settings > API in your Loops dashboard",
+          "Create a new API key",
+          "Copy the key"
+        ]
+      },
+      "script": [
+        { "type": "copy_key", "note": "Paste your Loops API key" }
+      ]
+    }
+  },
+  "apis": {
+    "rest": {
+      "base_url": "https://api.loops.so/v1",
+      "auth_header": "Authorization: Bearer {token}",
+      "docs_url": "https://docs.loops.so",
+      "spec_url": "https://docs.loops.so/api-reference",
+      "spec_type": "openapi",
+      "methods": ["api_key"]
+    }
+  }
+}

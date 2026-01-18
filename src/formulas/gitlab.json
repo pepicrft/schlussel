@@ -2,97 +2,65 @@
   "schema": "v2",
   "id": "gitlab",
   "label": "GitLab",
-  "description": "Authenticate with GitLab using OAuth authorization code flow, device code, or personal access tokens. Access both REST and GraphQL APIs for repositories, merge requests, CI/CD, and more.",
-  "apis": {
-    "rest": {
-      "base_url": "https://gitlab.com/api/v4",
-      "auth_header": "Authorization: Bearer {token}",
-      "docs_url": "https://docs.gitlab.com/ee/api/rest/",
-      "spec_url": "https://gitlab.com/gitlab-org/gitlab/-/raw/master/doc/api/openapi/openapi.yaml",
-      "spec_type": "openapi"
-    },
-    "graphql": {
-      "base_url": "https://gitlab.com/api/graphql",
-      "auth_header": "Authorization: Bearer {token}",
-      "docs_url": "https://docs.gitlab.com/ee/api/graphql/",
-      "spec_url": "https://gitlab.com/api/graphql",
-      "spec_type": "graphql"
-    },
-    "mcp": {
-      "base_url": "https://gitlab.com/api/v4/mcp",
-      "auth_header": "Authorization: Bearer {token}",
-      "docs_url": "https://docs.gitlab.com/user/gitlab_duo/model_context_protocol/mcp_server/",
-      "methods": ["mcp_oauth"]
-    }
-  },
+  "description": "Authenticate with GitLab using OAuth device code flow or personal access tokens. Access projects, issues, and CI/CD.",
   "clients": [
     {
-      "name": "glab-cli",
-      "id": "41d48f9422ebd655dd9cf2947d6979681dfaddc6d0c56f7628f6ada59559af1e",
-      "source": "https://github.com/gitlabhq/cli",
-      "methods": ["authorization_code"],
-      "redirect_uri": "http://localhost:7171/auth/redirect"
+      "name": "gitlab-cli",
+      "id": "dummy",
+      "secret": "",
+      "type": "public",
+      "source": "https://gitlab.com/gitlab-org/cli",
+      "methods": ["device_code", "token"]
     }
   ],
   "identity": {
-    "label": "Account",
-    "hint": "e.g., personal, work"
+    "label": "Instance",
+    "hint": "e.g., gitlab.com or self-hosted instance"
   },
   "methods": {
-    "authorization_code": {
+    "device_code": {
+      "label": "Device Code",
       "endpoints": {
-        "authorize": "https://gitlab.com/oauth/authorize",
-        "token": "https://gitlab.com/oauth/token"
+        "device_authorization": "https://{instance}/oauth/device/authorize",
+        "token": "https://{instance}/oauth/token"
       },
-      "scope": "openid profile read_user write_repository api",
+      "scope": "api read_user read_repository",
+      "register": {
+        "url": "https://{instance}/-/user_settings/personal_access_tokens",
+        "steps": [
+          "Go to User Settings > Personal Access Tokens",
+          "Create a token with required scopes (api, read_user, read_repository)",
+          "Copy the token"
+        ]
+      },
       "script": [
         { "type": "open_url", "value": "{authorize_url}" },
-        { "type": "wait_for_callback" }
+        { "type": "wait_for_user_code" }
       ]
     },
-    "device_code": {
-      "endpoints": {
-        "device": "https://gitlab.com/oauth/authorize_device",
-        "token": "https://gitlab.com/oauth/token"
-      },
-      "scope": "openid profile read_user write_repository api",
-      "script": [
-        { "type": "open_url", "value": "{verification_uri}" },
-        { "type": "enter_code", "value": "{user_code}" },
-        { "type": "wait_for_token" }
-      ]
-    },
-    "personal_access_token": {
+    "token": {
+      "label": "Personal Access Token",
       "register": {
-        "url": "https://gitlab.com/-/user_settings/personal_access_tokens",
+        "url": "https://{instance}/-/user_settings/personal_access_tokens",
         "steps": [
-          "Go to User Settings > Access Tokens",
-          "Create a new personal access token with required scopes (api, read_user, write_repository)",
+          "Go to User Settings > Personal Access Tokens",
+          "Create a token with api scope",
           "Copy the token"
         ]
       },
       "script": [
         { "type": "copy_key", "note": "Paste your GitLab personal access token" }
       ]
-    },
-    "mcp_oauth": {
-      "label": "MCP OAuth",
-      "endpoints": {
-        "registration": "https://gitlab.com/oauth/register",
-        "authorize": "https://gitlab.com/oauth/authorize",
-        "token": "https://gitlab.com/oauth/token"
-      },
-      "dynamic_registration": {
-        "client_name": "schlussel",
-        "grant_types": ["authorization_code", "refresh_token"],
-        "response_types": ["code"],
-        "token_endpoint_auth_method": "none",
-        "scope": "mcp"
-      },
-      "script": [
-        { "type": "open_url", "value": "{authorize_url}" },
-        { "type": "wait_for_callback" }
-      ]
+    }
+  },
+  "apis": {
+    "rest": {
+      "base_url": "https://{instance}/api/v4",
+      "auth_header": "PRIVATE-TOKEN: {token}",
+      "docs_url": "https://docs.gitlab.com/ee/api/rest",
+      "spec_url": "https://gitlab.com/gitlab-org/gitlab/-/raw/master/doc/api/openapi.json",
+      "spec_type": "openapi",
+      "methods": ["device_code", "token"]
     }
   }
 }

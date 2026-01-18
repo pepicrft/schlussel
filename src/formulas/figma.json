@@ -1,0 +1,52 @@
+{
+  "schema": "v2",
+  "id": "figma",
+  "label": "Figma",
+  "description": "Authenticate with Figma using OAuth authorization code flow. Access designs, files, and components.",
+  "clients": [
+    {
+      "name": "figma-desktop",
+      "id": "YOUR_CLIENT_ID",
+      "secret": "YOUR_CLIENT_SECRET",
+      "type": "public",
+      "source": "https://github.com/figma/figma-desktop",
+      "methods": ["oauth"]
+    }
+  ],
+  "identity": {
+    "label": "Account",
+    "hint": "e.g., personal, team name"
+  },
+  "methods": {
+    "oauth": {
+      "label": "OAuth",
+      "endpoints": {
+        "authorize": "https://www.figma.com/oauth",
+        "token": "https://www.figma.com/api/oauth/token"
+      },
+      "scope": "file_read",
+      "register": {
+        "url": "https://www.figma.com/developers/console",
+        "steps": [
+          "Create a new Figma app",
+          "Set redirect URI to http://localhost:8080/callback",
+          "Copy client ID and secret"
+        ]
+      },
+      "script": [
+        { "type": "open_url", "value": "{authorize_url}" },
+        { "type": "wait_for_callback" }
+      ]
+    }
+  },
+  "apis": {
+    "rest": {
+      "base_url": "https://api.figma.com/v1",
+      "auth_header": "X-Figma-Token: {token}",
+      "docs_url": "https://www.figma.com/developers/api",
+      "spec_url": "https://www.figma.com/developers/api",
+      "spec_type": "openapi",
+      "methods": ["oauth"]
+    }
+  }
+}

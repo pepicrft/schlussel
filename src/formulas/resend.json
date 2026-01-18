@@ -1,0 +1,36 @@
+{
+  "schema": "v2",
+  "id": "resend",
+  "label": "Resend",
+  "description": "Authenticate with Resend using API keys. Access transactional email and SMTP relay.",
+  "identity": {
+    "label": "Account",
+    "hint": "e.g., personal"
+  },
+  "methods": {
+    "api_key": {
+      "label": "API Key",
+      "register": {
+        "url": "https://resend.com/api-keys",
+        "steps": [
+          "Go to API Keys in Resend dashboard",
+          "Create a new API key",
+          "Copy the key"
+        ]
+      },
+      "script": [
+        { "type": "copy_key", "note": "Paste your Resend API key" }
+      ]
+    }
+  },
+  "apis": {
+    "rest": {
+      "base_url": "https://api.resend.com",
+      "auth_header": "Authorization: Bearer {token}",
+      "docs_url": "https://resend.com/docs",
+      "spec_url": "https://resend.com/docs/api",
+      "spec_type": "openapi",
+      "methods": ["api_key"]
+    }
+  }
+}

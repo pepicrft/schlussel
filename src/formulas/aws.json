@@ -1,0 +1,48 @@
+{
+  "schema": "v2",
+  "id": "aws",
+  "label": "AWS",
+  "description": "Authenticate with AWS using IAM credentials or SSO. Access all AWS services via the CLI.",
+  "identity": {
+    "label": "Profile",
+    "hint": "AWS profile name (default, or from ~/.aws/config)"
+  },
+  "methods": {
+    "credentials": {
+      "label": "IAM Credentials",
+      "register": {
+        "url": "https://console.aws.amazon.com/iam",
+        "steps": [
+          "Create an IAM user with programmatic access",
+          "Attach appropriate policies",
+          "Copy Access Key ID and Secret Access Key"
+        ]
+      },
+      "script": [
+        { "type": "copy_key", "note": "Paste your AWS Access Key ID" }
+      ]
+    },
+    "sso": {
+      "label": "AWS SSO",
+      "register": {
+        "url": "https://console.aws.amazon.com/sso",
+        "steps": [
+          "Configure SSO in AWS Organization",
+          "Run 'aws sso login' to authenticate",
+          "Select the appropriate account and role"
+        ]
+      },
+      "script": [
+        { "type": "run_command", "value": "aws sso login --profile {profile}" }
+      ]
+    }
+  },
+  "apis": {
+    "cli": {
+      "base_url": "aws-cli",
+      "auth_header": "AWS Config",
+      "docs_url": "https://docs.aws.amazon.com/cli",
+      "methods": ["credentials", "sso"]
+    }
+  }
+}
