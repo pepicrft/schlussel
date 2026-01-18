@@ -43,8 +43,8 @@
     "rest": {
       "base_url": "https://api.figma.com/v1",
       "auth_header": "X-Figma-Token: {token}",
-      "docs_url": "https://www.figma.com/developers/api",
-      "spec_url": "https://www.figma.com/developers/api",
+      "docs_url": "https://developers.figma.com/docs/rest-api",
+      "spec_url": "https://developers.figma.com/openapi/spec.json",
       "spec_type": "openapi",
       "methods": ["oauth"]
     }
