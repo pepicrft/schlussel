@@ -28,7 +28,7 @@
       "base_url": "https://api.loops.so/v1",
       "auth_header": "Authorization: Bearer {token}",
       "docs_url": "https://docs.loops.so",
-      "spec_url": "https://docs.loops.so/api-reference",
+      "spec_url": "",
       "spec_type": "openapi",
       "methods": ["api_key"]
     }

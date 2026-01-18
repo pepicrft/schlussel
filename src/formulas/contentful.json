@@ -1,0 +1,56 @@
+{
+  "schema": "v2",
+  "id": "contentful",
+  "label": "Contentful",
+  "description": "Authenticate with Contentful using API keys or OAuth. Access content, spaces, and management APIs.",
+  "identity": {
+    "label": "Space",
+    "hint": "e.g., space ID or name"
+  },
+  "methods": {
+    "content_delivery_api": {
+      "label": "Content Delivery API Token",
+      "register": {
+        "url": "https://app.contentful.com > Settings > API keys",
+        "steps": [
+          "Go to Settings > API keys",
+          "Create a new API key (or use existing)",
+          "Copy the Space ID and Content Delivery API Access Token"
+        ]
+      },
+      "script": [
+        { "type": "copy_key", "note": "Paste your Contentful Content Delivery API token" }
+      ]
+    },
+    "content_management_api": {
+      "label": "Content Management API Token",
+      "register": {
+        "url": "https://app.contentful.com > Settings > Personal Access Tokens",
+        "steps": [
+          "Go to Settings > Personal Access Tokens",
+          "Create a new token with content management scope",
+          "Copy the token"
+        ]
+      },
+      "script": [
+        { "type": "copy_key", "note": "Paste your Contentful Management API token" }
+      ]
+    }
+  },
+  "apis": {
+    "delivery": {
+      "base_url": "https://cdn.contentful.com/spaces/{space_id}",
+      "auth_header": "Bearer {token}",
+      "docs_url": "https://www.contentful.com/developers/docs/apis/content-delivery-api",
+      "methods": ["content_delivery_api"]
+    },
+    "management": {
+      "base_url": "https://api.contentful.com/spaces/{space_id}",
+      "auth_header": "Bearer {token}",
+      "docs_url": "https://www.contentful.com/developers/docs/apis/content-management-api",
+      "spec_url": "",
+      "spec_type": "openapi",
+      "methods": ["content_management_api"]
+    }
+  }
+}

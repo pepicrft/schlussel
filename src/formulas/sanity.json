@@ -1,0 +1,60 @@
+{
+  "schema": "v2",
+  "id": "sanity",
+  "label": "Sanity",
+  "description": "Authenticate with Sanity using API tokens or OAuth. Access content, projects, and datasets.",
+  "identity": {
+    "label": "Project",
+    "hint": "e.g., project ID"
+  },
+  "methods": {
+    "token": {
+      "label": "API Token",
+      "register": {
+        "url": "https://www.sanity.io/organization/{org}/api",
+        "steps": [
+          "Go to your Sanity project dashboard",
+          "Navigate to API > Tokens",
+          "Create a new token with desired permissions",
+          "Copy the token"
+        ]
+      },
+      "script": [
+        { "type": "copy_key", "note": "Paste your Sanity API token" }
+      ]
+    },
+    "oauth": {
+      "label": "OAuth",
+      "endpoints": {
+        "authorize": "https://www.sanity.io/oauth/authorize",
+        "token": "https://www.sanity.io/oauth/token"
+      },
+      "scope": "openid profile email",
+      "register": {
+        "url": "https://www.sanity.io/manage/personal/access-tokens",
+        "steps": [
+          "Create tokens via the Sanity CLI or dashboard",
+          "OAuth is primarily for studio authentication"
+        ]
+      },
+      "script": [
+        { "type": "open_url", "value": "{authorize_url}" },
+        { "type": "wait_for_callback" }
+      ]
+    }
+  },
+  "apis": {
+    "rest": {
+      "base_url": "https://api.sanity.io/v2021-10-01",
+      "auth_header": "Authorization: Bearer {token}",
+      "docs_url": "https://www.sanity.io/docs/reference",
+      "methods": ["token", "oauth"]
+    },
+    "graphql": {
+      "base_url": "https://{projectId}.api.sanity.io/v1/graphql/{dataset}/default",
+      "auth_header": "Authorization: Bearer {token}",
+      "docs_url": "https://www.sanity.io/docs/front-end/graphql",
+      "methods": ["token"]
+    }
+  }
+}

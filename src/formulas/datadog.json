@@ -1,0 +1,56 @@
+{
+  "schema": "v2",
+  "id": "datadog",
+  "label": "Datadog",
+  "description": "Authenticate with Datadog using API keys or OAuth. Access metrics, logs, and monitoring data.",
+  "identity": {
+    "label": "Account",
+    "hint": "e.g., site (datadoghq.com, us3.datadoghq.com)"
+  },
+  "methods": {
+    "api_key": {
+      "label": "API Key",
+      "register": {
+        "url": "https://{site}/organization-settings/api-keys",
+        "steps": [
+          "Go to Organization Settings > API Keys",
+          "Create a new API key",
+          "Copy the key"
+        ]
+      },
+      "script": [
+        { "type": "copy_key", "note": "Paste your Datadog API key" }
+      ]
+    },
+    "app_key": {
+      "label": "Application Key",
+      "register": {
+        "url": "https://{site}/organization-settings/application-keys",
+        "steps": [
+          "Go to Organization Settings > Application Keys",
+          "Create a new application key",
+          "Copy the key"
+        ]
+      },
+      "script": [
+        { "type": "copy_key", "note": "Paste your Datadog application key" }
+      ]
+    }
+  },
+  "apis": {
+    "api": {
+      "base_url": "https://api.{site}",
+      "auth_header": "DD-API-KEY: {token}",
+      "docs_url": "https://docs.datadoghq.com/api",
+      "spec_url": "https://api.{site}/api/unstable/openapi",
+      "spec_type": "openapi",
+      "methods": ["api_key"]
+    },
+    "api_v2": {
+      "base_url": "https://api.{site}",
+      "auth_header": "DD-API-KEY: {api_key}\nDD-APPLICATION-KEY: {app_key}",
+      "docs_url": "https://docs.datadoghq.com/api/v2",
+      "methods": ["api_key", "app_key"]
+    }
+  }
+}

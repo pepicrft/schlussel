@@ -44,7 +44,7 @@
       "base_url": "https://api.figma.com/v1",
       "auth_header": "X-Figma-Token: {token}",
       "docs_url": "https://developers.figma.com/docs/rest-api",
-      "spec_url": "https://developers.figma.com/openapi/spec.json",
+      "spec_url": "",
       "spec_type": "openapi",
       "methods": ["oauth"]
     }

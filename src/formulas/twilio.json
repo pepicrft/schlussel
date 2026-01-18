@@ -1,0 +1,36 @@
+{
+  "schema": "v2",
+  "id": "twilio",
+  "label": "Twilio",
+  "description": "Authenticate with Twilio using API keys (SID + Secret). Access messaging, voice, and phone numbers.",
+  "identity": {
+    "label": "Account",
+    "hint": "e.g., personal or subaccount SID"
+  },
+  "methods": {
+    "api_key": {
+      "label": "API Key",
+      "register": {
+        "url": "https://console.twilio.com > Settings > API Keys",
+        "steps": [
+          "Go to Console > Settings > API Keys",
+          "Create a new API key",
+          "Copy the Account SID, API Key SID, and API Key Secret"
+        ]
+      },
+      "script": [
+        { "type": "copy_key", "note": "Paste your Twilio Account SID" }
+      ]
+    }
+  },
+  "apis": {
+    "rest": {
+      "base_url": "https://api.twilio.com/2010-04-01",
+      "auth_header": "Basic {token}",
+      "docs_url": "https://www.twilio.com/docs/usage/api",
+      "spec_url": "",
+      "spec_type": "openapi",
+      "methods": ["api_key"]
+    }
+  }
+}

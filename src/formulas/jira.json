@@ -1,0 +1,58 @@
+{
+  "schema": "v2",
+  "id": "jira",
+  "label": "Jira",
+  "description": "Authenticate with Jira using API tokens or OAuth. Access issues, projects, and boards.",
+  "identity": {
+    "label": "Instance",
+    "hint": "e.g., company.atlassian.net"
+  },
+  "methods": {
+    "api_token": {
+      "label": "API Token",
+      "register": {
+        "url": "https://id.atlassian.com/manage-profile/security/api-tokens",
+        "steps": [
+          "Go to your Atlassian profile settings",
+          "Select Security > API tokens",
+          "Create a new API token",
+          "Copy the token"
+        ]
+      },
+      "script": [
+        { "type": "copy_key", "note": "Paste your Jira API token" }
+      ]
+    },
+    "oauth": {
+      "label": "OAuth (3LO)",
+      "endpoints": {
+        "authorize": "https://auth.atlassian.com/authorize",
+        "token": "https://auth.atlassian.com/oauth/token"
+      },
+      "scope": "read:jira-work write:jira-work read:jira-user",
+      "register": {
+        "url": "https://developer.atlassian.com/console/myapps",
+        "steps": [
+          "Create a new app in the Developer Console",
+          "Configure OAuth 2.0 (3LO)",
+          "Set callback URL to http://localhost:8080/callback",
+          "Copy Client ID and Client Secret"
+        ]
+      },
+      "script": [
+        { "type": "open_url", "value": "{authorize_url}" },
+        { "type": "wait_for_callback" }
+      ]
+    }
+  },
+  "apis": {
+    "rest": {
+      "base_url": "https://{instance}/rest/api/3",
+      "auth_header": "Authorization: Bearer {token}",
+      "docs_url": "https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-groups-overview",
+      "spec_url": "https://api.atlassian.com/ex/jira/{cloudid}/rest/api/3",
+      "spec_type": "openapi",
+      "methods": ["api_token", "oauth"]
+    }
+  }
+}

@@ -976,7 +976,8 @@ export function renderHomepage(): string {
 '        <p class="formulas__intro">\n' +
 '          Schlussel ships with formulas for popular platforms. Each formula knows\n' +
 '          the OAuth endpoints, scopes, and even includes public client credentials\n' +
-'          when available. When a formula has a public client, Schlussel auto-selects it. Just run and authenticate.\n' +
+'          when available. Formulas are actively maintained and verified for accuracy.
+'          When a formula has a public client, Schlussel auto-selects it. Just run and authenticate.\n' +
 '        </p>\n' +
 '        <div class="search">\n' +
 '          <input type="text" class="search__input" id="formula-search" placeholder="Search formulas (e.g. github, oauth, api_key...)">\n' +

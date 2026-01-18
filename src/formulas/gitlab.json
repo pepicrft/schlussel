@@ -58,7 +58,7 @@
       "base_url": "https://{instance}/api/v4",
       "auth_header": "PRIVATE-TOKEN: {token}",
       "docs_url": "https://docs.gitlab.com/ee/api/rest",
-      "spec_url": "https://gitlab.com/gitlab-org/gitlab/-/raw/master/doc/api/openapi.json",
+      "spec_url": "",
       "spec_type": "openapi",
       "methods": ["device_code", "token"]
     }

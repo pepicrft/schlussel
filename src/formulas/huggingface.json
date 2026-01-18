@@ -28,7 +28,7 @@
       "base_url": "https://huggingface.co/api",
       "auth_header": "Authorization: Bearer {token}",
       "docs_url": "https://huggingface.co/docs",
-      "spec_url": "https://huggingface.co/docs/api",
+      "spec_url": "",
       "spec_type": "openapi",
       "methods": ["token"]
     },

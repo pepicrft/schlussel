@@ -1,0 +1,57 @@
+{
+  "schema": "v2",
+  "id": "calendly",
+  "label": "Calendly",
+  "description": "Authenticate with Calendly using Personal Access Tokens or OAuth. Access scheduling and event data.",
+  "identity": {
+    "label": "Account",
+    "hint": "e.g., personal, organization"
+  },
+  "methods": {
+    "personal_access_token": {
+      "label": "Personal Access Token",
+      "register": {
+        "url": "https://calendly.com/integrations/webhooks",
+        "steps": [
+          "Go to Calendly Settings > Integrations",
+          "Scroll to API & Webhooks",
+          "Click 'Connect' or 'Create Token'",
+          "Copy the API key or token"
+        ]
+      },
+      "script": [
+        { "type": "copy_key", "note": "Paste your Calendly API key" }
+      ]
+    },
+    "oauth": {
+      "label": "OAuth",
+      "endpoints": {
+        "authorize": "https://auth.calendly.com/oauth/authorize",
+        "token": "https://auth.calendly.com/oauth/token"
+      },
+      "scope": "default",
+      "register": {
+        "url": "https://calendly.com/integrations/api_oauth",
+        "steps": [
+          "Go to Integrations > API & Webhooks",
+          "Create an OAuth application",
+          "Copy Client ID and Client Secret"
+        ]
+      },
+      "script": [
+        { "type": "open_url", "value": "{authorize_url}" },
+        { "type": "wait_for_callback" }
+      ]
+    }
+  },
+  "apis": {
+    "rest": {
+      "base_url": "https://api.calendly.com",
+      "auth_header": "Bearer {token}",
+      "docs_url": "https://developer.calendly.com/api-docs",
+      "spec_url": "",
+      "spec_type": "openapi",
+      "methods": ["personal_access_token", "oauth"]
+    }
+  }
+}

@@ -28,7 +28,7 @@
       "base_url": "https://api.anthropic.com/v1",
       "auth_header": "x-api-key: {token}",
       "docs_url": "https://docs.anthropic.com/en/api",
-      "spec_url": "https://docs.anthropic.com/en/api/overview",
+      "spec_url": "",
       "spec_type": "openapi",
       "methods": ["api_key"]
     }

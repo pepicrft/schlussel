@@ -1,0 +1,48 @@
+{
+  "schema": "v2",
+  "id": "npm",
+  "label": "npm",
+  "description": "Authenticate with npm using automation tokens or legacy tokens. Access package publishing and organization management.",
+  "identity": {
+    "label": "Account",
+    "hint": "e.g., username or organization"
+  },
+  "methods": {
+    "automation_token": {
+      "label": "Automation Token",
+      "register": {
+        "url": "https://www.npmjs.com/settings/{scopeOrUser}/tokens",
+        "steps": [
+          "Go to your npm settings > Tokens",
+          "Create an automation token",
+          "Copy the token"
+        ]
+      },
+      "script": [
+        { "type": "copy_key", "note": "Paste your npm automation token" }
+      ]
+    },
+    "legacy_token": {
+      "label": "Legacy Token",
+      "register": {
+        "url": "https://www.npmjs.com/settings/{scopeOrUser}/tokens",
+        "steps": [
+          "Go to your npm settings > Tokens",
+          "Create a legacy (read-only) token",
+          "Copy the token"
+        ]
+      },
+      "script": [
+        { "type": "copy_key", "note": "Paste your npm legacy token" }
+      ]
+    }
+  },
+  "apis": {
+    "registry": {
+      "base_url": "https://registry.npmjs.org",
+      "auth_header": "//registry.npmjs.org/:_authToken={token}",
+      "docs_url": "https://docs.npmjs.com",
+      "methods": ["automation_token", "legacy_token"]
+    }
+  }
+}

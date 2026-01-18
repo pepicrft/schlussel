@@ -1,0 +1,49 @@
+{
+  "schema": "v2",
+  "id": "dockerhub",
+  "label": "Docker Hub",
+  "description": "Authenticate with Docker Hub using access tokens or password. Access repositories and organizations.",
+  "identity": {
+    "label": "Account",
+    "hint": "e.g., username or namespace"
+  },
+  "methods": {
+    "access_token": {
+      "label": "Access Token",
+      "register": {
+        "url": "https://hub.docker.com/settings/security",
+        "steps": [
+          "Go to Docker Hub > Settings > Security",
+          "Create a new access token",
+          "Copy the token"
+        ]
+      },
+      "script": [
+        { "type": "copy_key", "note": "Paste your Docker Hub access token" }
+      ]
+    },
+    "password": {
+      "label": "Password",
+      "register": {
+        "url": "https://hub.docker.com",
+        "steps": [
+          "Use your Docker ID password",
+          "Note: Access tokens are recommended for CLI use"
+        ]
+      },
+      "script": [
+        { "type": "copy_key", "note": "Paste your Docker Hub password" }
+      ]
+    }
+  },
+  "apis": {
+    "v2": {
+      "base_url": "https://registry-1.docker.io/v2",
+      "auth_header": "Bearer {token}",
+      "docs_url": "https://docs.docker.com/docker-hub/api/latest",
+      "spec_url": "",
+      "spec_type": "openapi",
+      "methods": ["access_token", "password"]
+    }
+  }
+}

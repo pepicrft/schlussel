@@ -1,0 +1,57 @@
+{
+  "schema": "v2",
+  "id": "typeform",
+  "label": "Typeform",
+  "description": "Authenticate with Typeform using Personal Access Tokens or OAuth. Access forms, responses, and workspaces.",
+  "identity": {
+    "label": "Account",
+    "hint": "e.g., personal, workspace"
+  },
+  "methods": {
+    "personal_access_token": {
+      "label": "Personal Access Token",
+      "register": {
+        "url": "https://admin.typeform.com/account#/settings/security",
+        "steps": [
+          "Go to Account Settings > Security",
+          "Find Personal Access Tokens section",
+          "Create a new token",
+          "Copy the token"
+        ]
+      },
+      "script": [
+        { "type": "copy_key", "note": "Paste your Typeform Personal Access Token" }
+      ]
+    },
+    "oauth": {
+      "label": "OAuth",
+      "endpoints": {
+        "authorize": "https://api.typeform.com/oauth/authorize",
+        "token": "https://api.typeform.com/oauth/token"
+      },
+      "scope": "forms:read forms:write responses:read",
+      "register": {
+        "url": "https://admin.typeform.com/account#/settings/security",
+        "steps": [
+          "Go to Account Settings > OAuth Applications",
+          "Create a new OAuth application",
+          "Copy Client ID and Client Secret"
+        ]
+      },
+      "script": [
+        { "type": "open_url", "value": "{authorize_url}" },
+        { "type": "wait_for_callback" }
+      ]
+    }
+  },
+  "apis": {
+    "rest": {
+      "base_url": "https://api.typeform.com",
+      "auth_header": "Bearer {token}",
+      "docs_url": "https://developer.typeform.com",
+      "spec_url": "",
+      "spec_type": "openapi",
+      "methods": ["personal_access_token", "oauth"]
+    }
+  }
+}

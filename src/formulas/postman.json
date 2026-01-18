@@ -1,0 +1,48 @@
+{
+  "schema": "v2",
+  "id": "postman",
+  "label": "Postman",
+  "description": "Authenticate with Postman using API keys or Bearer tokens. Access collections, workspaces, and APIs.",
+  "identity": {
+    "label": "Workspace",
+    "hint": "e.g., personal, team name"
+  },
+  "methods": {
+    "api_key": {
+      "label": "API Key",
+      "register": {
+        "url": "https://postman.com/settings/me/api-keys",
+        "steps": [
+          "Go to Postman Settings > API Keys",
+          "Create a new API key",
+          "Copy the key"
+        ]
+      },
+      "script": [
+        { "type": "copy_key", "note": "Paste your Postman API key" }
+      ]
+    },
+    "bearer_token": {
+      "label": "Bearer Token",
+      "register": {
+        "url": "https://postman.com",
+        "steps": [
+          "Sign in to Postman",
+          "Generate a bearer token from your account settings",
+          "Copy the token"
+        ]
+      },
+      "script": [
+        { "type": "copy_key", "note": "Paste your Postman bearer token" }
+      ]
+    }
+  },
+  "apis": {
+    "rest": {
+      "base_url": "https://api.getpostman.com",
+      "auth_header": "X-Api-Key: {token}",
+      "docs_url": "https://documenter.getpostman.com/view/28360/APIs",
+      "methods": ["api_key", "bearer_token"]
+    }
+  }
+}

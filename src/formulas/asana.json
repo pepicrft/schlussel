@@ -1,0 +1,56 @@
+{
+  "schema": "v2",
+  "id": "asana",
+  "label": "Asana",
+  "description": "Authenticate with Asana using OAuth or Personal Access Tokens. Access tasks, projects, and workspaces.",
+  "identity": {
+    "label": "Workspace",
+    "hint": "e.g., workspace name or gid"
+  },
+  "methods": {
+    "personal_access_token": {
+      "label": "Personal Access Token",
+      "register": {
+        "url": "https://app.asana.com/0/developer-console",
+        "steps": [
+          "Go to Developer Console",
+          "Create a new PAT or use existing",
+          "Copy the token"
+        ]
+      },
+      "script": [
+        { "type": "copy_key", "note": "Paste your Asana Personal Access Token" }
+      ]
+    },
+    "oauth": {
+      "label": "OAuth",
+      "endpoints": {
+        "authorize": "https://app.asana.com/-/oauth_authorize",
+        "token": "https://app.asana.com/-/oauth_token"
+      },
+      "scope": "default",
+      "register": {
+        "url": "https://app.asana.com/0/developer-console",
+        "steps": [
+          "Create a new app in the Developer Console",
+          "Set redirect URI to http://localhost:8080/callback",
+          "Copy Client ID and Client Secret"
+        ]
+      },
+      "script": [
+        { "type": "open_url", "value": "{authorize_url}" },
+        { "type": "wait_for_callback" }
+      ]
+    }
+  },
+  "apis": {
+    "rest": {
+      "base_url": "https://app.asana.com/api/1.0",
+      "auth_header": "Bearer {token}",
+      "docs_url": "https://developers.asana.com/docs",
+      "spec_url": "",
+      "spec_type": "openapi",
+      "methods": ["personal_access_token", "oauth"]
+    }
+  }
+}

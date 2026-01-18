@@ -1,0 +1,35 @@
+{
+  "schema": "v2",
+  "id": "n8n",
+  "label": "N8N",
+  "description": "Authenticate with N8N using API keys. Access workflows, credentials, and executions.",
+  "identity": {
+    "label": "Instance",
+    "hint": "e.g., cloud, self-hosted URL"
+  },
+  "methods": {
+    "api_key": {
+      "label": "API Key",
+      "register": {
+        "url": "https://{instance}/settings/api",
+        "steps": [
+          "Go to Settings > API",
+          "Enable the API",
+          "Generate a new API key",
+          "Copy the key"
+        ]
+      },
+      "script": [
+        { "type": "copy_key", "note": "Paste your N8N API key" }
+      ]
+    }
+  },
+  "apis": {
+    "rest": {
+      "base_url": "https://{instance}/api/v1",
+      "auth_header": "X-N8N-API-KEY: {token}",
+      "docs_url": "https://docs.n8n.io/api",
+      "methods": ["api_key"]
+    }
+  }
+}
