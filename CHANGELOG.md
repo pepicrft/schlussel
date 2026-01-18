@@ -1,5 +1,12 @@
 
 
+### Fix
+
+- Website text syntax error
+
+
+**Full Changelog**: https://github.com/pepicrft/schlussel/compare/0.12.0..0.12.1
+
 ### Feat
 
 - Add 12 new OAuth/API formulas
