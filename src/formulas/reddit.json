@@ -5,12 +5,12 @@
   "description": "Authenticate with Reddit using OAuth device code flow or installed app flow. Access Reddit's API for posts, comments, and user data.",
   "clients": [
     {
-      "name": "script",
-      "id": "xXJrJbNOGejh",
+      "name": "installed",
+      "id": "YOUR_CLIENT_ID",
       "secret": "",
       "type": "installed",
-      "source": "https://github.com/reddit-archive/reddit/wiki/OAuth",
-      "methods": ["installed"]
+      "source": "https://www.reddit.com/dev/api/#sectionauthentication",
+      "methods": ["installed", "device_code"]
     }
   ],
   "identity": {
@@ -35,7 +35,7 @@
         ]
       },
       "script": [
-        { "type": "open_url", "value": "https://www.reddit.com/api/v1/device_authorization" },
+        { "type": "open_url", "value": "{authorize_url}" },
         { "type": "wait_for_user_code" }
       ]
     },

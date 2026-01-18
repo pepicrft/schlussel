@@ -6,18 +6,10 @@
   "clients": [
     {
       "name": "notion-mobile",
-      "id": "b7445a56c03e6062d9ab164f6ee41a3e",
-      "secret": "secret_7Xq2Q8g7Pp2K9x2L5J3x8j3A9d2H8p2S",
+      "id": "YOUR_CLIENT_ID",
+      "secret": "YOUR_CLIENT_SECRET",
       "type": "public",
       "source": "https://github.com/notionhq/notion-sdk-js",
-      "methods": ["oauth"]
-    },
-    {
-      "name": "notion-desktop",
-      "id": "c8558b67c04e7073d9bc164f6ee42b4f",
-      "secret": "secret_8Yr3R9h8Qq3R8m4M6K4y9l4B0e3I7r1T",
-      "type": "public",
-      "source": "https://github.com/notionhq/desktop-apps",
       "methods": ["oauth"]
     }
   ],
