@@ -6,8 +6,8 @@
   "clients": [
     {
       "name": "slack-cli",
-      "id": "392735849912.123456789012",
-      "secret": "d4c5379f0c3a6e2f4b5c6d7e8f9a0b1c",
+      "id": "YOUR_CLIENT_ID",
+      "secret": "YOUR_CLIENT_SECRET",
       "type": "public",
       "source": "https://github.com/slackapi/slack-api-sdk",
       "methods": ["oauth"]
