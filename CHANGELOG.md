@@ -1,5 +1,12 @@
 
 
+### Docs
+
+- Update skill.md with comprehensive formula schema documentation
+
+
+**Full Changelog**: https://github.com/pepicrft/schlussel/compare/0.11.1..0.11.2
+
 ### Fix
 
 - Correct spec URLs in formulas
