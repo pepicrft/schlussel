@@ -1,5 +1,12 @@
 
 
+### Fix
+
+- Simplify Reddit formula to installed app flow only
+
+
+**Full Changelog**: https://github.com/pepicrft/schlussel/compare/0.11.2..0.11.3
+
 ### Docs
 
 - Update skill.md with comprehensive formula schema documentation
