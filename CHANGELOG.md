@@ -2,6 +2,19 @@
 
 ### Feat
 
+- Add OAuth/API formulas for OpenAI, Anthropic, GitLab, Figma, AWS, Discord, Loops, SendGrid, Resend, Supabase
+
+### Fix
+
+- Update Figma docs URLs and simplify Hugging Face formula
+- Use placeholder client ID in Slack formula
+- Use placeholder client IDs in Notion and Reddit formulas
+
+
+**Full Changelog**: https://github.com/pepicrft/schlussel/compare/0.10.0..0.11.0
+
+### Feat
+
 - Add OAuth formulas for Reddit, Hugging Face, Notion, Slack
 
 
