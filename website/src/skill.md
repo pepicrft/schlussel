@@ -92,6 +92,20 @@ Or get details for a specific formula:
 curl https://schlussel.me/api/formulas/github
 ```
 
+**Supported services include:**
+
+AI & Language Models: OpenAI, Anthropic, Claude, OpenRouter
+
+Code & Git: GitHub, GitLab, AWS (IAM/SSO)
+
+Design & Productivity: Figma, Linear, Notion, Slack, Discord
+
+Email & Marketing: Loops, SendGrid, Resend
+
+Infrastructure & Database: Supabase, Vercel, Fly, Cloudflare
+
+E-commerce & Streaming: Shopify, Spotify, Twitch, Zoom, Dropbox
+
 ## Formula Schema
 
 Each formula contains:
@@ -99,10 +113,53 @@ Each formula contains:
 - `id`: Unique identifier (e.g., `github`)
 - `label`: Human-readable name (e.g., `GitHub`)
 - `description`: What the formula does
-- `apis`: Available API endpoints with base URLs, auth headers, documentation links, and variables
+- `apis`: Available API endpoints with base URLs, auth headers, and documentation
 - `methods`: Authentication methods (e.g., `device_code`, `authorization_code`, `api_key`)
 - `clients`: Public OAuth clients that can be used without registration
 - `identity`: Optional identity hint for multi-account support
+- `notes`: Additional documentation for non-standard auth flows
+
+### API Object
+
+Each API in `apis` contains:
+
+- `base_url`: Base URL for API requests
+- `auth_header`: Authorization header template (e.g., `Authorization: Bearer {token}`)
+- `docs_url`: Link to API documentation
+- `spec_url`: Link to OpenAPI/GraphQL spec (optional)
+- `spec_type`: Type of spec (`openapi` or `graphql`)
+- `example_endpoint`: Example API endpoint path (optional)
+- `variables`: Parameters for parameterized URLs (optional)
+- `methods`: List of auth methods supported by this API
+
+### Method Object
+
+Each method in `methods` contains:
+
+- `label`: Human-readable name for the method
+- `endpoints`: OAuth endpoints (`authorize`, `token`, `device_authorization`)
+- `scope`: OAuth scopes (comma-separated string or array)
+- `register`: Setup instructions with `url` and `steps` array
+- `script`: Interactive steps for the auth flow
+- `dynamic_registration`: MCP OAuth dynamic registration settings
+
+### Client Object
+
+Each client in `clients` contains:
+
+- `name`: Client name/identifier
+- `id`: OAuth client ID (use `YOUR_CLIENT_ID` for placeholders)
+- `secret`: OAuth client secret (empty for public clients)
+- `type`: Client type (`public`, `installed`, `confidential`)
+- `source`: Link to source code or documentation
+- `methods`: Array of supported auth methods
+
+### Identity Object
+
+Identity hints for multi-account support:
+
+- `label`: Field label (e.g., `Account`, `Workspace`)
+- `hint`: Placeholder text to guide the user
 
 ### API Variables
 
