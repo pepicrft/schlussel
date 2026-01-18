@@ -2,6 +2,13 @@
 
 ### Feat
 
+- Add OAuth formulas for Reddit, Hugging Face, Notion, Slack
+
+
+**Full Changelog**: https://github.com/pepicrft/schlussel/compare/0.9.0..0.10.0
+
+### Feat
+
 - Add OAuth device code formulas for Dropbox, Google, Spotify, Twitch, Zoom
 
 
