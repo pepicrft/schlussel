@@ -1,5 +1,12 @@
 
 
+### Feat
+
+- Add 12 new OAuth/API formulas
+
+
+**Full Changelog**: https://github.com/pepicrft/schlussel/compare/0.11.3..0.12.0
+
 ### Fix
 
 - Simplify Reddit formula to installed app flow only
