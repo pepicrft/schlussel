@@ -1,5 +1,12 @@
 
 
+### Fix
+
+- Correct spec URLs in formulas
+
+
+**Full Changelog**: https://github.com/pepicrft/schlussel/compare/0.11.0..0.11.1
+
 ### Feat
 
 - Add OAuth/API formulas for OpenAI, Anthropic, GitLab, Figma, AWS, Discord, Loops, SendGrid, Resend, Supabase
