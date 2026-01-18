@@ -1,5 +1,12 @@
 
 
+### Feat
+
+- Add OAuth device code formulas for Dropbox, Google, Spotify, Twitch, Zoom
+
+
+**Full Changelog**: https://github.com/pepicrft/schlussel/compare/0.8.3..0.9.0
+
 ### Fix
 
 - Restore token expiry and avoid secure exists leak by [@pepicrft](https://github.com/pepicrft)
