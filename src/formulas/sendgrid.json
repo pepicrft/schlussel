@@ -28,8 +28,8 @@
       "base_url": "https://api.sendgrid.com/v3",
       "auth_header": "Authorization: Bearer {token}",
       "docs_url": "https://docs.sendgrid.com",
-      "spec_url": "https://raw.githubusercontent.com/sendgrid/sendgrid-oai/main/oai.json",
-      "spec_type": "openapi",
+      "spec_url": "",
+      "spec_type": "",
       "methods": ["api_key"]
     }
   }

@@ -28,8 +28,8 @@
       "base_url": "https://api.resend.com",
       "auth_header": "Authorization: Bearer {token}",
       "docs_url": "https://resend.com/docs",
-      "spec_url": "https://resend.com/docs/api",
-      "spec_type": "openapi",
+      "spec_url": "",
+      "spec_type": "",
       "methods": ["api_key"]
     }
   }
