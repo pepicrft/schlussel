@@ -1,0 +1,61 @@
+{
+  "schema": "v2",
+  "id": "notion",
+  "label": "Notion",
+  "description": "Authenticate with Notion using OAuth authorization code flow. Access pages, databases, and workspace content.",
+  "clients": [
+    {
+      "name": "notion-mobile",
+      "id": "b7445a56c03e6062d9ab164f6ee41a3e",
+      "secret": "secret_7Xq2Q8g7Pp2K9x2L5J3x8j3A9d2H8p2S",
+      "type": "public",
+      "source": "https://github.com/notionhq/notion-sdk-js",
+      "methods": ["oauth"]
+    },
+    {
+      "name": "notion-desktop",
+      "id": "c8558b67c04e7073d9bc164f6ee42b4f",
+      "secret": "secret_8Yr3R9h8Qq3R8m4M6K4y9l4B0e3I7r1T",
+      "type": "public",
+      "source": "https://github.com/notionhq/desktop-apps",
+      "methods": ["oauth"]
+    }
+  ],
+  "identity": {
+    "label": "Workspace",
+    "hint": "The workspace name or leave empty for personal"
+  },
+  "methods": {
+    "oauth": {
+      "label": "OAuth",
+      "endpoints": {
+        "authorize": "https://api.notion.com/v1/oauth/authorize",
+        "token": "https://api.notion.com/v1/oauth/token"
+      },
+      "scope": "authorization_code",
+      "register": {
+        "url": "https://www.notion.so/my-integrations",
+        "steps": [
+          "Click 'New integration' or 'Develop or manage integrations'",
+          "Name your integration and select capabilities",
+          "Copy the Client ID and Client Secret",
+          "Add the integration to your pages/databases"
+        ]
+      },
+      "script": [
+        { "type": "open_url", "value": "{authorize_url}" },
+        { "type": "wait_for_callback" }
+      ]
+    }
+  },
+  "apis": {
+    "rest": {
+      "base_url": "https://api.notion.com/v1",
+      "auth_header": "Authorization: Bearer {token}",
+      "docs_url": "https://developers.notion.com",
+      "spec_url": "https://raw.githubusercontent.com/NotionX/react-notion-x/master/packages/notion-client/src/api-endpoints.json",
+      "spec_type": "openapi",
+      "methods": ["oauth"]
+    }
+  }
+}

@@ -1,0 +1,72 @@
+{
+  "schema": "v2",
+  "id": "huggingface",
+  "label": "Hugging Face",
+  "description": "Authenticate with Hugging Face using OAuth device code flow or token-based auth. Access models, datasets, and Spaces.",
+  "clients": [
+    {
+      "name": "huggingface-cli",
+      "id": "client",
+      "secret": "",
+      "type": "public",
+      "source": "https://github.com/huggingface/huggingface_hub",
+      "methods": ["device_code", "token"]
+    }
+  ],
+  "identity": {
+    "label": "Account",
+    "hint": "e.g., personal, organization name"
+  },
+  "methods": {
+    "device_code": {
+      "label": "Device Code",
+      "endpoints": {
+        "device_authorization": "https://huggingface.com/oauth/device/authorization",
+        "token": "https://huggingface.com/oauth/token"
+      },
+      "scope": "openid profile email offline_access inference-api",
+      "register": {
+        "url": "https://huggingface.co/settings/tokens",
+        "steps": [
+          "Go to Settings > Access Tokens",
+          "Create a new token with appropriate permissions",
+          "Copy the token for use"
+        ]
+      },
+      "script": [
+        { "type": "open_url", "value": "{authorize_url}" },
+        { "type": "wait_for_user_code" }
+      ]
+    },
+    "token": {
+      "label": "Access Token",
+      "register": {
+        "url": "https://huggingface.co/settings/tokens",
+        "steps": [
+          "Go to Settings > Access Tokens",
+          "Create a new token (read, write, or full access as needed)",
+          "Copy the token"
+        ]
+      },
+      "script": [
+        { "type": "copy_key", "note": "Paste your Hugging Face access token" }
+      ]
+    }
+  },
+  "apis": {
+    "rest": {
+      "base_url": "https://huggingface.co/api",
+      "auth_header": "Authorization: Bearer {token}",
+      "docs_url": "https://huggingface.co/docs",
+      "spec_url": "https://huggingface.co/api",
+      "spec_type": "openapi",
+      "methods": ["device_code", "token"]
+    },
+    "inference": {
+      "base_url": "https://api-inference.huggingface.co",
+      "auth_header": "Authorization: Bearer {token}",
+      "docs_url": "https://huggingface.co/docs/inference",
+      "methods": ["device_code", "token"]
+    }
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "schema": "v2",
+  "id": "slack",
+  "label": "Slack",
+  "description": "Authenticate with Slack using OAuth authorization code flow. Access workspaces, channels, and messages.",
+  "clients": [
+    {
+      "name": "slack-cli",
+      "id": "392735849912.123456789012",
+      "secret": "d4c5379f0c3a6e2f4b5c6d7e8f9a0b1c",
+      "type": "public",
+      "source": "https://github.com/slackapi/slack-api-sdk",
+      "methods": ["oauth"]
+    }
+  ],
+  "identity": {
+    "label": "Workspace",
+    "hint": "The workspace domain (e.g., mycompany)"
+  },
+  "methods": {
+    "oauth": {
+      "label": "OAuth",
+      "endpoints": {
+        "authorize": "https://slack.com/oauth/v2/authorize",
+        "token": "https://slack.com/api/oauth.v2.access"
+      },
+      "scope": "channels:read,channels:history,chat:write,users:read",
+      "register": {
+        "url": "https://api.slack.com/apps",
+        "steps": [
+          "Create a new app or select existing one",
+          "Go to OAuth & Permissions",
+          "Add required scopes",
+          "Install app to workspace",
+          "Copy the Bot User OAuth Token"
+        ]
+      },
+      "script": [
+        { "type": "open_url", "value": "{authorize_url}" },
+        { "type": "wait_for_callback" }
+      ]
+    }
+  },
+  "apis": {
+    "rest": {
+      "base_url": "https://slack.com/api",
+      "auth_header": "Authorization: Bearer {token}",
+      "docs_url": "https://api.slack.com/docs",
+      "spec_url": "https://raw.githubusercontent.com/slackapi/slack-api-specs/master/web-api/slack_web_openapi_v2.json",
+      "spec_type": "openapi",
+      "methods": ["oauth"]
+    }
+  }
+}
