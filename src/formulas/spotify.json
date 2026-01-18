@@ -1,0 +1,43 @@
+{
+  "schema": "v2",
+  "id": "spotify",
+  "label": "Spotify",
+  "description": "Authenticate with Spotify using OAuth device code flow. Access Spotify Web API for music playback, playlists, and user data.",
+  "apis": {
+    "web_api": {
+      "base_url": "https://api.spotify.com/v1",
+      "auth_header": "Authorization: Bearer {token}",
+      "docs_url": "https://developer.spotify.com/documentation/web-api",
+      "spec_url": "https://raw.githubusercontent.com/spotify/web-api-docs/main/stability_notes/index.md",
+      "spec_type": "openapi",
+      "methods": ["device_code"]
+    }
+  },
+  "clients": [
+    {
+      "name": "spotify-cli",
+      "id": "YOUR_CLIENT_ID",
+      "secret": "YOUR_CLIENT_SECRET",
+      "source": "https://developer.spotify.com/documentation/web-api/concepts/authorization",
+      "methods": ["device_code"]
+    }
+  ],
+  "identity": {
+    "label": "Account",
+    "hint": "e.g., personal, premium"
+  },
+  "methods": {
+    "device_code": {
+      "endpoints": {
+        "device": "https://accounts.spotify.com/authorize",
+        "token": "https://accounts.spotify.com/api/token"
+      },
+      "scope": "user-read-private user-read-email playlist-read-private user-library-read user-top-read",
+      "script": [
+        { "type": "open_url", "value": "{verification_uri}" },
+        { "type": "enter_code", "value": "{user_code}" },
+        { "type": "wait_for_token" }
+      ]
+    }
+  }
+}

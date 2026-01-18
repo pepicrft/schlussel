@@ -1,0 +1,41 @@
+{
+  "schema": "v2",
+  "id": "zoom",
+  "label": "Zoom",
+  "description": "Authenticate with Zoom using OAuth device code flow. Access Zoom API for meetings, users, and webinars.",
+  "apis": {
+    "rest": {
+      "base_url": "https://api.zoom.us/v2",
+      "auth_header": "Authorization: Bearer {token}",
+      "docs_url": "https://developers.zoom.us/docs/api",
+      "methods": ["device_code"]
+    }
+  },
+  "clients": [
+    {
+      "name": "zoom-cli",
+      "id": "YOUR_CLIENT_ID",
+      "secret": "YOUR_CLIENT_SECRET",
+      "source": "https://developers.zoom.us/docs/internal-apps/",
+      "methods": ["device_code"]
+    }
+  ],
+  "identity": {
+    "label": "Account",
+    "hint": "e.g., personal, work"
+  },
+  "methods": {
+    "device_code": {
+      "endpoints": {
+        "device": "https://zoom.us/oauth/device_authorize",
+        "token": "https://zoom.us/oauth/token"
+      },
+      "scope": "meeting:read:admin user:read:admin report:read:admin",
+      "script": [
+        { "type": "open_url", "value": "{verification_uri}" },
+        { "type": "enter_code", "value": "{user_code}" },
+        { "type": "wait_for_token" }
+      ]
+    }
+  }
+}

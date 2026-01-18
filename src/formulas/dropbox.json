@@ -1,0 +1,47 @@
+{
+  "schema": "v2",
+  "id": "dropbox",
+  "label": "Dropbox",
+  "description": "Authenticate with Dropbox using OAuth device code flow. Access Dropbox API for files, folders, and sharing.",
+  "apis": {
+    "files": {
+      "base_url": "https://api.dropboxapi.com/2",
+      "auth_header": "Authorization: Bearer {token}",
+      "docs_url": "https://www.dropbox.com/developers/documentation/httpdocs",
+      "methods": ["device_code"]
+    },
+    "content": {
+      "base_url": "https://content.dropboxapi.com/2",
+      "auth_header": "Authorization: Bearer {token}",
+      "docs_url": "https://www.dropbox.com/developers/documentation/httpdocs",
+      "methods": ["device_code"]
+    }
+  },
+  "clients": [
+    {
+      "name": "dropbox-cli",
+      "id": "YOUR_CLIENT_ID",
+      "secret": "YOUR_CLIENT_SECRET",
+      "source": "https://www.dropbox.com/developers/oauth-guide",
+      "methods": ["device_code"]
+    }
+  ],
+  "identity": {
+    "label": "Account",
+    "hint": "e.g., personal, business"
+  },
+  "methods": {
+    "device_code": {
+      "endpoints": {
+        "device": "https://www.dropbox.com/oauth2/device",
+        "token": "https://api.dropboxapi.com/oauth2/token"
+      },
+      "scope": "account_info.read files.metadata.read files.content.read sharing.read",
+      "script": [
+        { "type": "open_url", "value": "{verification_uri}" },
+        { "type": "enter_code", "value": "{user_code}" },
+        { "type": "wait_for_token" }
+      ]
+    }
+  }
+}

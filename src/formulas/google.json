@@ -1,0 +1,59 @@
+{
+  "schema": "v2",
+  "id": "google",
+  "label": "Google",
+  "description": "Authenticate with Google using OAuth device code flow for limited-input devices. Access Google APIs for Gmail, Calendar, Drive, and more.",
+  "apis": {
+    "gmail": {
+      "base_url": "https://gmail.googleapis.com/gmail/v1",
+      "auth_header": "Authorization: Bearer {token}",
+      "docs_url": "https://developers.google.com/gmail/api",
+      "methods": ["device_code"]
+    },
+    "calendar": {
+      "base_url": "https://www.googleapis.com/calendar/v3",
+      "auth_header": "Authorization: Bearer {token}",
+      "docs_url": "https://developers.google.com/calendar/api",
+      "methods": ["device_code"]
+    },
+    "drive": {
+      "base_url": "https://www.googleapis.com/drive/v3",
+      "auth_header": "Authorization: Bearer {token}",
+      "docs_url": "https://developers.google.com/drive/api",
+      "methods": ["device_code"]
+    },
+    "people": {
+      "base_url": "https://people.googleapis.com/v1",
+      "auth_header": "Authorization: Bearer {token}",
+      "docs_url": "https://developers.google.com/people/api",
+      "methods": ["device_code"]
+    }
+  },
+  "clients": [
+    {
+      "name": "google-cli",
+      "id": "YOUR_CLIENT_ID",
+      "secret": "YOUR_CLIENT_SECRET",
+      "source": "https://developers.google.com/identity/protocols/oauth2/limited-input-device",
+      "methods": ["device_code"]
+    }
+  ],
+  "identity": {
+    "label": "Project",
+    "hint": "Use your Google Cloud project ID"
+  },
+  "methods": {
+    "device_code": {
+      "endpoints": {
+        "device": "https://oauth2.googleapis.com/device/code",
+        "token": "https://oauth2.googleapis.com/token"
+      },
+      "scope": "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/drive.readonly",
+      "script": [
+        { "type": "open_url", "value": "{verification_uri}" },
+        { "type": "enter_code", "value": "{user_code}" },
+        { "type": "wait_for_token" }
+      ]
+    }
+  }
+}
