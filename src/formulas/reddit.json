@@ -2,54 +2,23 @@
   "schema": "v2",
   "id": "reddit",
   "label": "Reddit",
-  "description": "Authenticate with Reddit using OAuth device code flow or installed app flow. Access Reddit's API for posts, comments, and user data.",
-  "clients": [
-    {
-      "name": "installed",
-      "id": "YOUR_CLIENT_ID",
-      "secret": "",
-      "type": "installed",
-      "source": "https://www.reddit.com/dev/api/#sectionauthentication",
-      "methods": ["installed", "device_code"]
-    }
-  ],
+  "description": "Authenticate with Reddit using OAuth installed app flow. Access posts, comments, and user data.",
   "identity": {
-    "label": "Username",
+    "label": "Account",
     "hint": "Your Reddit username (without u/)"
   },
   "methods": {
-    "device_code": {
-      "label": "Device Code",
-      "endpoints": {
-        "device_authorization": "https://www.reddit.com/api/v1/device_authorization",
-        "token": "https://www.reddit.com/api/v1/access_token"
-      },
-      "scope": "identity,read,submit,vote,history",
-      "register": {
-        "url": "https://www.reddit.com/prefs/apps",
-        "steps": [
-          "Click 'create app' or 'create another app'",
-          "Select 'installed app' as the type",
-          "Set redirect URI to http://localhost:8080",
-          "Copy the client ID (under the app name)"
-        ]
-      },
-      "script": [
-        { "type": "open_url", "value": "{authorize_url}" },
-        { "type": "wait_for_user_code" }
-      ]
-    },
     "installed": {
       "label": "Installed App",
       "endpoints": {
         "authorize": "https://www.reddit.com/api/v1/authorize",
         "token": "https://www.reddit.com/api/v1/access_token"
       },
-      "scope": "identity,read,submit,vote,history",
+      "scope": "identity read submit vote history",
       "register": {
         "url": "https://www.reddit.com/prefs/apps",
         "steps": [
-          "Click 'create app'",
+          "Click 'create app' or 'create another app'",
           "Select 'installed app' as the type",
           "Set redirect URI to http://localhost:8080",
           "Copy the client ID"
@@ -66,9 +35,7 @@
       "base_url": "https://oauth.reddit.com",
       "auth_header": "Authorization: Bearer {token}",
       "docs_url": "https://www.reddit.com/dev/api",
-      "spec_url": "https://raw.githubusercontent.com/reddit-archive/reddit/master/doc/api.json",
-      "spec_type": "openapi",
-      "methods": ["device_code", "installed"]
+      "methods": ["installed"]
     }
   }
 }
