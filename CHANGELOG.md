@@ -2,6 +2,13 @@
 
 ### Fix
 
+- Website TypeScript syntax error - string continuation
+
+
+**Full Changelog**: https://github.com/pepicrft/schlussel/compare/0.12.1..0.12.2
+
+### Fix
+
 - Website text syntax error
 
 
